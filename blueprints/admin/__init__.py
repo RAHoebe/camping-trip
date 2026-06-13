@@ -8,6 +8,7 @@ from blueprints.auth import admin_required
 from database import get_db, get_all_settings, get_home_location, get_trip, get_trip_pois, get_trip_stops, log_audit, rows_to_dicts, set_setting
 from gpx_import import get_gpxfeed_status, update_gpxfeed_if_needed
 from route_service import get_route_for_trip
+from traffic_service import get_traffic_status, record_traffic_error, update_traffic_events
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -170,6 +171,37 @@ def _stop_form_context(trip, stop=None, default_arrival_date=None, nights=None):
         "stop_details": _stop_form_details(stop),
         "existing_last_stop": _last_stop_for_trip(trip["trip_id"], stop["stop_id"] if stop else None),
     }
+
+
+def _trip_warnings(stops, home):
+    warnings = []
+    if stops and not home:
+        warnings.append("No home location is set, so the route starts at the first campsite.")
+    previous = None
+    for stop in stops:
+        try:
+            float(stop["latitude"])
+            float(stop["longitude"])
+        except (TypeError, ValueError):
+            warnings.append(f"{stop['name']} has missing or invalid coordinates.")
+
+        arrival = None
+        departure = None
+        try:
+            arrival = datetime.strptime(str(stop["arrival_date"])[:10], "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            warnings.append(f"{stop['name']} has an invalid arrival date.")
+        try:
+            departure = datetime.strptime(str(stop["departure_date"])[:10], "%Y-%m-%d").date() if stop["departure_date"] else None
+        except (TypeError, ValueError):
+            warnings.append(f"{stop['name']} has an invalid departure date.")
+        if arrival and departure and departure < arrival:
+            warnings.append(f"{stop['name']} departs before it arrives.")
+        if previous and arrival and previous["departure"] and arrival < previous["departure"]:
+            warnings.append(f"{stop['name']} overlaps with {previous['name']}.")
+        if arrival:
+            previous = {"name": stop["name"], "departure": departure or arrival}
+    return warnings
 
 
 @admin_bp.route("/")
@@ -349,15 +381,17 @@ def manage_trip(trip_id):
     stops = get_trip_stops(trip_id)
     pois = get_trip_pois(trip_id)
     route = get_route_for_trip(trip_id)
+    home = get_home_location()
     return render_template(
         "admin/manage_trip.html",
         trip=trip,
         stops=stops,
         pois=pois,
         route=route,
+        warnings=_trip_warnings(stops, home),
         stops_json=rows_to_dicts(stops),
         pois_json=rows_to_dicts(pois),
-        home_json=get_home_location(),
+        home_json=home,
     )
 
 
@@ -372,6 +406,28 @@ def delete_trip(trip_id):
     log_audit(current_user.user_id, "DELETE_TRIP", trip["title"], "trip", trip_id)
     flash("Trip deleted.", "success")
     return redirect(url_for("admin.trips_list"))
+
+
+@admin_bp.route("/trips/<int:trip_id>/sync-dates", methods=["POST"])
+@admin_required
+def sync_trip_dates(trip_id):
+    trip = get_trip(trip_id)
+    if not trip:
+        abort(404)
+    stops = get_trip_stops(trip_id)
+    if not stops:
+        flash("Add at least one campsite before syncing trip dates.", "warning")
+        return redirect(url_for("admin.manage_trip", trip_id=trip_id))
+    start_date = stops[0]["arrival_date"]
+    end_date = stops[-1]["departure_date"] or stops[-1]["arrival_date"]
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE trips SET start_date = ?, end_date = ?, updated_at = CURRENT_TIMESTAMP WHERE trip_id = ?",
+            (start_date, end_date, trip_id),
+        )
+    log_audit(current_user.user_id, "SYNC_TRIP_DATES", trip["title"], "trip", trip_id)
+    flash("Trip dates synced from campsites.", "success")
+    return redirect(url_for("admin.manage_trip", trip_id=trip_id))
 
 
 @admin_bp.route("/trips/<int:trip_id>/stops/create", methods=["GET", "POST"])
@@ -615,6 +671,26 @@ def campgrounds():
         q=q,
         status=get_gpxfeed_status(),
     )
+
+
+@admin_bp.route("/traffic", methods=["GET", "POST"])
+@admin_required
+def traffic():
+    if request.method == "POST":
+        try:
+            result = update_traffic_events(force=True)
+            flash(f"Traffic update finished. {result.get('event_count', 0)} events are available.", "success")
+        except Exception as exc:
+            record_traffic_error("ndw", exc)
+            flash(f"Could not update traffic data: {exc}", "danger")
+        return redirect(url_for("admin.traffic"))
+    with get_db() as conn:
+        events = conn.execute("""
+            SELECT * FROM traffic_events
+            ORDER BY fetched_at DESC, starts_at DESC
+            LIMIT 200
+        """).fetchall()
+    return render_template("admin/traffic.html", status=get_traffic_status(), events=events)
 
 
 @admin_bp.route("/campgrounds/<int:campground_id>/add", methods=["POST"])

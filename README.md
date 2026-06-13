@@ -26,7 +26,6 @@ Default routing is GraphHopper-compatible.
 
 ```text
 ROUTE_PROVIDER=graphhopper
-GRAPHHOPPER_API_KEY_FILE=graphhopper.key
 ```
 
 Create `graphhopper.key` in the project folder and paste only the API key in that file. It is ignored by git and Docker builds.
@@ -39,7 +38,7 @@ $env:GRAPHHOPPER_API_KEY="your-key-here"
 python app.py
 ```
 
-`run_local.cmd`, `run_waitress.cmd`, and `run_docker.cmd` read `graphhopper.key` automatically. Docker mounts it into the container as a read-only secret file instead of baking it into the image.
+`run_local.cmd`, `run_waitress.cmd`, and `run_docker.cmd` read `graphhopper.key` automatically. For Docker, `run_docker.cmd` passes the key to the container as the `GRAPHHOPPER_API_KEY` environment variable.
 
 For OSRM:
 
@@ -49,6 +48,20 @@ OSRM_BASE_URL=https://router.project-osrm.org
 ```
 
 Routes are calculated between campsites in arrival-date order. Manual POIs are displayed on the map but do not affect the route.
+
+## Traffic Warnings
+
+The app can fetch normalized traffic warnings and road closures from NDW/DATEX II and overlay events near the current route. Normal routing is unchanged unless closure avoidance is explicitly enabled.
+
+```text
+TRAFFIC_WARNINGS_ENABLED=true
+TRAFFIC_FIRST_PROVIDER=ndw
+TRAFFIC_LOOKAHEAD_DAYS=30
+TRAFFIC_ROUTE_CORRIDOR_METERS=150
+ROUTE_AVOID_CLOSURES_ENABLED=false
+```
+
+Admins can update and inspect events from `Admin -> Traffic Warnings`. The map can also try `Avoid closures` when `ROUTE_AVOID_CLOSURES_ENABLED=true`; failed avoidance falls back to the original route with a warning.
 
 ## Campground Data
 

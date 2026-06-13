@@ -59,6 +59,29 @@ def _start_gpxfeed_background_update():
 _start_gpxfeed_background_update()
 
 
+def _start_traffic_background_update():
+    if not config.TRAFFIC_WARNINGS_ENABLED:
+        return
+
+    def worker():
+        try:
+            from traffic_service import record_traffic_error, update_traffic_events
+
+            update_traffic_events(force=False)
+        except Exception as exc:
+            try:
+                record_traffic_error(config.TRAFFIC_FIRST_PROVIDER, exc)
+            except Exception:
+                pass
+            app.logger.warning("Traffic warning auto-update failed: %s", exc)
+
+    thread = threading.Thread(target=worker, name="traffic-update", daemon=True)
+    thread.start()
+
+
+_start_traffic_background_update()
+
+
 _version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version.txt")
 try:
     with open(_version_file, "r", encoding="utf-8") as version_file:

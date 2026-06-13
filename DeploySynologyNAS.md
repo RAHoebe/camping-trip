@@ -23,17 +23,7 @@ Create:
 
 Mount `/volume1/docker/camping_trip/data` to `/app/data`.
 
-Create a GraphHopper key file:
-
-```text
-/volume1/docker/camping_trip/graphhopper.key
-```
-
-Paste only the API key in that file and mount it read-only to:
-
-```text
-/run/secrets/graphhopper.key
-```
+For Docker on Synology, add the GraphHopper key as an environment variable.
 
 ## Container Settings
 
@@ -52,9 +42,14 @@ GUNICORN_LOG_LEVEL=warning
 DEFAULT_ADMIN_USERNAME=admin
 DEFAULT_ADMIN_PASSWORD=change-this-before-public-use
 ROUTE_PROVIDER=graphhopper
-GRAPHHOPPER_API_KEY_FILE=/run/secrets/graphhopper.key
+GRAPHHOPPER_API_KEY=your-graphhopper-key
 GPXFEED_AUTO_UPDATE=true
 GPXFEED_UPDATE_INTERVAL_HOURS=24
+TRAFFIC_WARNINGS_ENABLED=true
+TRAFFIC_FIRST_PROVIDER=ndw
+TRAFFIC_LOOKAHEAD_DAYS=30
+TRAFFIC_ROUTE_CORRIDOR_METERS=150
+ROUTE_AVOID_CLOSURES_ENABLED=false
 ```
 
 For a no-key OSRM-compatible route provider, set:

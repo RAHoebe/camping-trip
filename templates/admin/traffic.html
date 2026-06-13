@@ -1,0 +1,47 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Traffic Warnings{% endblock %}
+{% block admin_content %}
+<div class="page-heading">
+    <div>
+        <h1>Traffic Warnings</h1>
+        <p class="text-muted mb-0">Normalized roadworks and closure data used for route warning overlays.</p>
+    </div>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-success" type="submit"><i class="bi bi-arrow-clockwise"></i> Update Now</button>
+    </form>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card"><span>{{ status.events }}</span><label>Stored events</label></div>
+    {% for source in status.sources %}
+    <div class="stat-card">
+        <span>{{ source.event_count }}</span>
+        <label>{{ source.source|upper }} {{ source.status }}{% if source.fetched_at %} · {{ source.fetched_at }}{% endif %}</label>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="panel">
+    <div class="panel-head"><h2>Recent Events</h2></div>
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead><tr><th>Type</th><th>Severity</th><th>Title</th><th>Road</th><th>Start</th><th>End</th></tr></thead>
+            <tbody>
+                {% for event in events %}
+                <tr>
+                    <td>{{ event.event_type }}</td>
+                    <td><span class="badge text-bg-{% if event.severity == 'closed' %}danger{% elif event.severity == 'major' %}warning{% else %}secondary{% endif %}">{{ event.severity }}</span></td>
+                    <td>{{ event.title }}</td>
+                    <td>{{ event.road_name or "-" }}</td>
+                    <td>{{ event.starts_at or "-" }}</td>
+                    <td>{{ event.ends_at or "-" }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-muted">No traffic events stored yet. Use Update Now to fetch the configured provider.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

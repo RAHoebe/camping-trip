@@ -3,10 +3,12 @@ import math
 
 from flask import Blueprint, abort, jsonify, request
 from flask_login import login_required
+from werkzeug.exceptions import HTTPException
 
 from blueprints.auth import admin_required
 from database import get_db, get_home_location, get_trip, rows_to_dicts, set_setting
 from route_service import get_route_for_trip
+from traffic_service import warnings_for_route
 
 api_bp = Blueprint("api", __name__)
 
@@ -17,7 +19,22 @@ def trip_route(trip_id):
     if not get_trip(trip_id):
         abort(404)
     refresh = request.args.get("refresh") == "1"
-    return jsonify(get_route_for_trip(trip_id, refresh=refresh))
+    avoid_closures = request.args.get("avoid_closures") == "1"
+    return jsonify(get_route_for_trip(trip_id, refresh=refresh, avoid_closures=avoid_closures))
+
+
+@api_bp.route("/trips/<int:trip_id>/traffic-warnings")
+@login_required
+def trip_traffic_warnings(trip_id):
+    if not get_trip(trip_id):
+        abort(404)
+    try:
+        route = get_route_for_trip(trip_id)
+        return jsonify({"warnings": warnings_for_route(trip_id, route=route)})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        return jsonify({"warnings": [], "error": f"Traffic warnings unavailable: {exc}"}), 200
 
 
 @api_bp.route("/campgrounds/search")

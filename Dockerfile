@@ -6,7 +6,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     FLASK_APP=app.py \
     DATA_FOLDER=/app/data \
-    GRAPHHOPPER_API_KEY_FILE=/run/secrets/graphhopper.key \
     GUNICORN_LOG_LEVEL=warning
 
 COPY requirements_docker.txt .

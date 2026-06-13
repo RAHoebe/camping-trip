@@ -22,6 +22,14 @@
                 <i class="bi bi-pencil-square"></i> Edit Plan
             </a>
             {% endif %}
+            <div class="button-row mt-2">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('trips.google_maps', trip_id=trip.trip_id) }}" target="_blank" rel="noopener">
+                    <i class="bi bi-map"></i> Google Maps
+                </a>
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('trips.download_kml', trip_id=trip.trip_id) }}">
+                    <i class="bi bi-download"></i> KML
+                </a>
+            </div>
         </div>
         <div class="sidebar-section">
             <h2>Campsites</h2>
@@ -79,7 +87,9 @@ window.CAMPING_TRIP = {
     tripId: {{ trip.trip_id }},
     home: {{ home_json|tojson }},
     stops: {{ stops_json|tojson }},
-    pois: {{ pois_json|tojson }}
+    pois: {{ pois_json|tojson }},
+    stopMetrics: {{ route.stop_metrics|tojson }},
+    trafficWarningsUrl: {{ url_for('api.trip_traffic_warnings', trip_id=trip.trip_id)|tojson }}
 };
 </script>
 <script src="{{ url_for('static', filename='js/trip-map.js') }}"></script>

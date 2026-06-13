@@ -236,6 +236,34 @@ def init_database():
         """)
         _ensure_column(cursor, "route_cache", "route_legs_json", "TEXT")
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS traffic_events (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                country TEXT,
+                event_type TEXT NOT NULL DEFAULT 'unknown',
+                severity TEXT NOT NULL DEFAULT 'info',
+                title TEXT NOT NULL,
+                description TEXT,
+                starts_at TEXT,
+                ends_at TEXT,
+                road_name TEXT,
+                geometry_geojson TEXT NOT NULL,
+                raw_source_id TEXT,
+                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source, raw_source_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS traffic_update_status (
+                source TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                message TEXT,
+                fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                event_count INTEGER DEFAULT 0
+            )
+        """)
+
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
             "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)",
@@ -246,6 +274,9 @@ def init_database():
             "CREATE INDEX IF NOT EXISTS idx_trip_stops_trip_dates ON trip_stops(trip_id, arrival_date, departure_date)",
             "CREATE INDEX IF NOT EXISTS idx_pois_trip ON pois(trip_id)",
             "CREATE INDEX IF NOT EXISTS idx_imported_campgrounds_name ON imported_campgrounds(name)",
+            "CREATE INDEX IF NOT EXISTS idx_traffic_events_source ON traffic_events(source)",
+            "CREATE INDEX IF NOT EXISTS idx_traffic_events_time ON traffic_events(starts_at, ends_at)",
+            "CREATE INDEX IF NOT EXISTS idx_traffic_events_type ON traffic_events(event_type, severity)",
         ]
         for index_sql in indexes:
             cursor.execute(index_sql)

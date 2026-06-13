@@ -281,7 +281,6 @@ body {
 .trip-side-panel .panel h2 {
   font-size: 1rem;
 }
-}
 
 .route-status {
   position: absolute;
@@ -297,18 +296,93 @@ body {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-.map-help {
+.map-toolbar {
   position: absolute;
-  left: 4rem;
   top: 0.75rem;
-  z-index: 500;
-  max-width: min(560px, calc(100% - 2rem));
-  padding: 0.55rem 0.75rem;
+  right: 0.75rem;
+  left: 4rem;
+  z-index: 520;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  max-width: none;
+  padding: 0.4rem;
+  border: 1px solid var(--ct-border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.95);
-  border: 1px solid var(--ct-border);
-  color: #1f2937;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.map-toolbar .form-select {
+  width: auto;
+  min-width: 86px;
+}
+
+.planner-warnings {
+  display: grid;
+  gap: 0.35rem;
+  margin: -0.35rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #7c2d12;
+}
+
+.planner-warnings div {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.route-warning-list {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+}
+
+.route-warning-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: start;
+  padding: 0.55rem;
+  border: 1px solid var(--ct-border);
+  border-radius: 8px;
+  background: rgba(217, 119, 6, 0.08);
+}
+
+.route-warning-item i {
+  color: #d97706;
+  font-size: 1.05rem;
+}
+
+.route-warning-item strong,
+.route-warning-item span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.route-warning-item span {
+  color: var(--ct-text-soft);
+  font-size: 0.8rem;
+}
+
+.route-warning-closed {
+  border-color: rgba(220, 38, 38, 0.45);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.route-warning-closed i {
+  color: #dc2626;
+}
+
+.traffic-popup {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 220px;
 }
 
 .campground-search-control button {
@@ -778,6 +852,12 @@ body {
 
   .admin-sidebar {
     position: static;
+  }
+
+  .map-toolbar {
+    left: 3.75rem;
+    align-items: stretch;
+    justify-content: flex-start;
   }
 
   .page-heading,

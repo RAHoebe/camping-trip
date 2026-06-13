@@ -16,6 +16,12 @@
     </div>
     <div class="button-row">
         <a class="btn btn-outline-secondary" href="{{ url_for('trips.trip_detail', trip_id=trip.trip_id) }}"><i class="bi bi-eye"></i> View</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('trips.google_maps', trip_id=trip.trip_id) }}" target="_blank" rel="noopener"><i class="bi bi-map"></i> Google Maps</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('trips.download_kml', trip_id=trip.trip_id) }}"><i class="bi bi-download"></i> KML</a>
+        <form method="POST" action="{{ url_for('admin.sync_trip_dates', trip_id=trip.trip_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-calendar-check"></i> Sync Dates</button>
+        </form>
         <a class="btn btn-outline-success" href="{{ url_for('admin.edit_trip', trip_id=trip.trip_id) }}"><i class="bi bi-pencil"></i> Edit Trip</a>
         <form method="POST" action="{{ url_for('admin.delete_trip', trip_id=trip.trip_id) }}" onsubmit="return confirm('Delete this trip?')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -23,13 +29,18 @@
         </form>
     </div>
 </div>
+{% if warnings %}
+<div class="planner-warnings">
+    {% for warning in warnings %}
+    <div><i class="bi bi-exclamation-triangle"></i> {{ warning }}</div>
+    {% endfor %}
+</div>
+{% endif %}
 
 <div class="trip-workspace">
     <div class="admin-map-panel">
         <div id="tripMap" class="admin-map"></div>
-        <div class="map-help">
-            Click the map to add a campsite or POI, or search GpxFeed campsites around the map center.
-        </div>
+        <div class="map-toolbar" id="mapToolbar"></div>
         <div class="route-status" id="routeStatus">
             {% if route.status == "ok" %}
             Route ready{% if route.distance_m %}: {{ "%.0f"|format(route.distance_m / 1000) }} km{% endif %}
@@ -129,12 +140,16 @@ window.CAMPING_TRIP = {
     home: {{ home_json|tojson }},
     stops: {{ stops_json|tojson }},
     pois: {{ pois_json|tojson }},
+    stopMetrics: {{ route.stop_metrics|tojson }},
     admin: {
         addStopUrl: {{ url_for('admin.create_stop', trip_id=trip.trip_id)|tojson }},
         addPoiUrl: {{ url_for('admin.create_poi', trip_id=trip.trip_id)|tojson }},
+        editStopBaseUrl: {{ '/admin/stops'|tojson }},
         addCampgroundBaseUrl: {{ (url_for('admin.manage_trip', trip_id=trip.trip_id).rstrip('/') + '/campgrounds')|tojson }},
         campgroundsSearchUrl: {{ url_for('api.campground_search')|tojson }},
         homeLocationUrl: {{ url_for('api.update_home_location')|tojson }},
+        trafficWarningsUrl: {{ url_for('api.trip_traffic_warnings', trip_id=trip.trip_id)|tojson }},
+        avoidClosuresUrl: {{ url_for('api.trip_route', trip_id=trip.trip_id)|tojson }},
         csrfToken: {{ csrf_token()|tojson }}
     }
 };
