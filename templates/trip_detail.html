@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ trip.title }}{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+{% block main_class %}container-fluid p-0{% endblock %}
+{% block content %}
+<div class="trip-layout">
+    <aside class="trip-sidebar">
+        <div class="trip-sidebar-head">
+            <a class="small-link" href="{{ url_for('trips.list_trips') }}"><i class="bi bi-arrow-left"></i> Trips</a>
+            <h1>{{ trip.title }}</h1>
+            <div class="trip-summary-line stacked">
+                {% if trip.start_date or trip.end_date %}<span>{{ trip.start_date|date_span(trip.end_date) }}</span>{% endif %}
+                {% if stops|trip_days %}<span><i class="bi bi-calendar3"></i> {{ stops|trip_days }} days</span>{% endif %}
+                {% if route.distance_m %}<span><i class="bi bi-signpost"></i> {{ route.distance_m|format_km }}</span>{% endif %}
+                {% if route.duration_s %}<span><i class="bi bi-clock"></i> {{ route.duration_s|format_travel_time }}</span>{% endif %}
+            </div>
+            <p>{{ trip.description or "No description yet." }}</p>
+            {% if current_user.is_admin %}
+            <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">
+                <i class="bi bi-pencil-square"></i> Edit Plan
+            </a>
+            {% endif %}
+        </div>
+        <div class="sidebar-section">
+            <h2>Campsites</h2>
+            {% for stop in stops %}
+            {% set metric = route.stop_metrics.get(stop.stop_id) if route.stop_metrics else none %}
+            <div class="timeline-item">
+                <span class="timeline-number">{{ loop.index }}</span>
+                <div>
+                    <strong>{{ stop.name }}</strong>
+                    <div class="text-muted small">{{ stop.arrival_date|date_span(stop.departure_date) }}</div>
+                    {% if metric %}
+                    <div class="stop-route-metrics">
+                        <span><i class="bi bi-arrow-right"></i> {{ metric.distance_m|format_km }}{% if metric.duration_s %} / {{ metric.duration_s|format_travel_time }}{% endif %}</span>
+                        <span><i class="bi bi-plus-circle"></i> total {{ metric.cumulative_distance_m|format_km }}{% if metric.cumulative_duration_s %} / {{ metric.cumulative_duration_s|format_travel_time }}{% endif %}</span>
+                    </div>
+                    {% endif %}
+                    {% if stop.booking_reference %}<div class="small">Booking: {{ stop.booking_reference }}</div>{% endif %}
+                    {% if stop.is_last_stop and route.return_home_metric %}
+                    <div class="stop-route-metrics return-home-metric">
+                        <span><i class="bi bi-house"></i> back home {{ route.return_home_metric.distance_m|format_km }}{% if route.return_home_metric.duration_s %} / {{ route.return_home_metric.duration_s|format_travel_time }}{% endif %}</span>
+                        <span><i class="bi bi-plus-circle"></i> trip total {{ route.return_home_metric.cumulative_distance_m|format_km }}{% if route.return_home_metric.cumulative_duration_s %} / {{ route.return_home_metric.cumulative_duration_s|format_travel_time }}{% endif %}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <p class="text-muted">No campsites planned yet.</p>
+            {% endfor %}
+        </div>
+        <div class="sidebar-section">
+            <h2>POIs</h2>
+            {% for poi in pois %}
+            <div class="poi-row">
+                <span class="poi-dot poi-{{ poi.category }}"></span>
+                <div>
+                    <strong>{{ poi.name }}</strong>
+                    <div class="text-muted small">{{ poi.category|title }}{% if poi.stop_name %} near {{ poi.stop_name }}{% endif %}</div>
+                </div>
+            </div>
+            {% else %}
+            <p class="text-muted">No POIs added yet.</p>
+            {% endfor %}
+        </div>
+    </aside>
+    <section class="trip-map-wrap">
+        <div id="tripMap" class="trip-map"></div>
+        <div class="route-status" id="routeStatus">Loading route...</div>
+    </section>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+window.CAMPING_TRIP = {
+    tripId: {{ trip.trip_id }},
+    home: {{ home_json|tojson }},
+    stops: {{ stops_json|tojson }},
+    pois: {{ pois_json|tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='js/trip-map.js') }}"></script>
+{% endblock %}

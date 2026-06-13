@@ -1,0 +1,143 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Manage {{ trip.title }}{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+{% endblock %}
+{% block admin_content %}
+<div class="page-heading">
+    <div>
+        <h1>{{ trip.title }}</h1>
+        <div class="trip-summary-line">
+            <span>{{ trip.start_date|date_span(trip.end_date) }}</span>
+            {% if stops|trip_days %}<span><i class="bi bi-calendar3"></i> {{ stops|trip_days }} days</span>{% endif %}
+            {% if route.distance_m %}<span><i class="bi bi-signpost"></i> {{ route.distance_m|format_km }}</span>{% endif %}
+            {% if route.duration_s %}<span><i class="bi bi-clock"></i> {{ route.duration_s|format_travel_time }}</span>{% endif %}
+        </div>
+    </div>
+    <div class="button-row">
+        <a class="btn btn-outline-secondary" href="{{ url_for('trips.trip_detail', trip_id=trip.trip_id) }}"><i class="bi bi-eye"></i> View</a>
+        <a class="btn btn-outline-success" href="{{ url_for('admin.edit_trip', trip_id=trip.trip_id) }}"><i class="bi bi-pencil"></i> Edit Trip</a>
+        <form method="POST" action="{{ url_for('admin.delete_trip', trip_id=trip.trip_id) }}" onsubmit="return confirm('Delete this trip?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline-danger" type="submit"><i class="bi bi-trash"></i></button>
+        </form>
+    </div>
+</div>
+
+<div class="trip-workspace">
+    <div class="admin-map-panel">
+        <div id="tripMap" class="admin-map"></div>
+        <div class="map-help">
+            Click the map to add a campsite or POI, or search GpxFeed campsites around the map center.
+        </div>
+        <div class="route-status" id="routeStatus">
+            {% if route.status == "ok" %}
+            Route ready{% if route.distance_m %}: {{ "%.0f"|format(route.distance_m / 1000) }} km{% endif %}
+            {% elif route.status == "not_enough_stops" %}
+            Add at least two campsites for routing.
+            {% else %}
+            Route unavailable: {{ route.message }}
+            {% endif %}
+        </div>
+    </div>
+
+    <aside class="trip-side-panel">
+    <section class="panel">
+        <div class="panel-head">
+            <h2>Campsites</h2>
+        </div>
+        {% for stop in stops %}
+        {% set metric = route.stop_metrics.get(stop.stop_id) if route.stop_metrics else none %}
+        <div class="stop-card">
+            <div class="stop-card-top">
+                <strong>{{ loop.index }}. {{ stop.name }}</strong>
+                <div class="icon-actions">
+                    <a class="icon-btn" href="{{ url_for('admin.edit_stop', stop_id=stop.stop_id) }}" title="Edit campsite" aria-label="Edit campsite">
+                        <i class="bi bi-pencil"></i>
+                    </a>
+                    <form method="POST" action="{{ url_for('admin.delete_stop', stop_id=stop.stop_id) }}" onsubmit="return confirm('Delete this campsite?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button class="icon-btn danger" type="submit" title="Delete campsite" aria-label="Delete campsite">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="stop-card-dates">{{ stop.arrival_date|date_span(stop.departure_date) }}</div>
+            {% if metric %}
+            <div class="stop-route-metrics">
+                <span><i class="bi bi-arrow-right"></i> {{ metric.distance_m|format_km }}{% if metric.duration_s %} / {{ metric.duration_s|format_travel_time }}{% endif %}</span>
+                <span><i class="bi bi-plus-circle"></i> total {{ metric.cumulative_distance_m|format_km }}{% if metric.cumulative_duration_s %} / {{ metric.cumulative_duration_s|format_travel_time }}{% endif %}</span>
+            </div>
+            {% endif %}
+            {% if stop.address %}<div class="small text-muted mt-1">{{ stop.address }}</div>{% endif %}
+            {% if stop.is_last_stop and route.return_home_metric %}
+            <div class="stop-route-metrics return-home-metric">
+                <span><i class="bi bi-house"></i> back home {{ route.return_home_metric.distance_m|format_km }}{% if route.return_home_metric.duration_s %} / {{ route.return_home_metric.duration_s|format_travel_time }}{% endif %}</span>
+                <span><i class="bi bi-plus-circle"></i> trip total {{ route.return_home_metric.cumulative_distance_m|format_km }}{% if route.return_home_metric.cumulative_duration_s %} / {{ route.return_home_metric.cumulative_duration_s|format_travel_time }}{% endif %}</span>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <p class="text-muted">No campsites yet. Click the map or choose a GpxFeed campground.</p>
+        {% endfor %}
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <h2>POIs</h2>
+            <a class="btn btn-sm btn-success" href="{{ url_for('admin.create_poi', trip_id=trip.trip_id) }}"><i class="bi bi-plus-lg"></i> Manual POI</a>
+        </div>
+        {% for poi in pois %}
+        <div class="manage-row">
+            <div>
+                <strong>{{ poi.name }}</strong>
+                <div class="text-muted small">{{ poi.category|title }}{% if poi.stop_name %} near {{ poi.stop_name }}{% endif %}</div>
+            </div>
+            <div class="button-row">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.edit_poi', poi_id=poi.poi_id) }}">Edit</a>
+                <form method="POST" action="{{ url_for('admin.delete_poi', poi_id=poi.poi_id) }}" onsubmit="return confirm('Delete this POI?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <p class="text-muted">No manual POIs yet.</p>
+        {% endfor %}
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <h2>GpxFeed Campgrounds</h2>
+            <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.campgrounds') }}"><i class="bi bi-tree"></i> Data</a>
+        </div>
+        <form class="campground-search side-search" action="{{ url_for('admin.campgrounds') }}">
+            <input class="form-control" name="q" placeholder="Search by name">
+            <button class="btn btn-outline-secondary" type="submit">Search</button>
+        </form>
+    </section>
+    </aside>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+window.CAMPING_TRIP = {
+    tripId: {{ trip.trip_id }},
+    tripStartDate: {{ (trip.start_date or '')|tojson }},
+    home: {{ home_json|tojson }},
+    stops: {{ stops_json|tojson }},
+    pois: {{ pois_json|tojson }},
+    admin: {
+        addStopUrl: {{ url_for('admin.create_stop', trip_id=trip.trip_id)|tojson }},
+        addPoiUrl: {{ url_for('admin.create_poi', trip_id=trip.trip_id)|tojson }},
+        addCampgroundBaseUrl: {{ (url_for('admin.manage_trip', trip_id=trip.trip_id).rstrip('/') + '/campgrounds')|tojson }},
+        campgroundsSearchUrl: {{ url_for('api.campground_search')|tojson }},
+        homeLocationUrl: {{ url_for('api.update_home_location')|tojson }},
+        csrfToken: {{ csrf_token()|tojson }}
+    }
+};
+</script>
+<script src="{{ url_for('static', filename='js/trip-map.js') }}"></script>
+{% endblock %}

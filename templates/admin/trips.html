@@ -1,0 +1,28 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Trips{% endblock %}
+{% block admin_content %}
+<div class="page-heading">
+    <h1>Trips</h1>
+    <a class="btn btn-success" href="{{ url_for('admin.create_trip') }}"><i class="bi bi-plus-lg"></i> New Trip</a>
+</div>
+<div class="table-responsive panel">
+    <table class="table align-middle">
+        <thead><tr><th>Trip</th><th>Dates</th><th>Campsites</th><th>POIs</th><th></th></tr></thead>
+        <tbody>
+            {% for trip in trips %}
+            <tr>
+                <td><strong>{{ trip.title }}</strong><div class="text-muted small">{{ trip.description }}</div></td>
+                <td>{{ trip.start_date|date_span(trip.end_date) }}</td>
+                <td>{{ trip.stop_count }}</td>
+                <td>{{ trip.poi_count }}</td>
+                <td class="text-end">
+                    <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">Manage</a>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-muted">No trips yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

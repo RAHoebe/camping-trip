@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Trips{% endblock %}
+{% block content %}
+<div class="page-heading">
+    <div>
+        <h1>Trips</h1>
+        <p class="text-muted mb-0">Browse planned camping trips and their dated campsite route.</p>
+    </div>
+    {% if current_user.is_admin %}
+    <a class="btn btn-success" href="{{ url_for('admin.create_trip') }}"><i class="bi bi-plus-lg"></i> New Trip</a>
+    {% endif %}
+</div>
+
+{% if trips %}
+<div class="trip-grid">
+    {% for trip in trips %}
+    <a class="trip-card" href="{{ url_for('trips.trip_detail', trip_id=trip.trip_id) }}">
+        <div class="trip-card-top">
+            <span class="trip-date">{{ trip.start_date|date_span(trip.end_date) if trip.start_date or trip.end_date else "Dates not set" }}</span>
+            <i class="bi bi-arrow-right"></i>
+        </div>
+        <h2>{{ trip.title }}</h2>
+        <p>{{ trip.description or "No description yet." }}</p>
+        <div class="trip-meta">
+            <span><i class="bi bi-house-heart"></i> {{ trip.stop_count }} campsites</span>
+            <span><i class="bi bi-pin-map"></i> {{ trip.poi_count }} POIs</span>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="bi bi-map"></i>
+    <h2>No trips yet</h2>
+    <p>Create the first trip from the admin area.</p>
+</div>
+{% endif %}
+{% endblock %}

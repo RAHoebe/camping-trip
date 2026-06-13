@@ -1,0 +1,34 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ "Edit POI" if poi else "New POI" }}{% endblock %}
+{% block admin_content %}
+<div class="page-heading"><h1>{{ "Edit POI" if poi else "New POI" }}</h1></div>
+<form class="panel form-wide" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ poi.name if poi else request.args.get('name', '') }}" required></div>
+        <div class="col-md-3">
+            <label class="form-label">Category</label>
+            <select class="form-select" name="category">
+                {% for value, label in [('viewpoint','Viewpoint'),('restaurant','Restaurant'),('hike','Hike'),('fuel','Fuel'),('supermarket','Supermarket'),('parking','Parking'),('custom','Custom')] %}
+                <option value="{{ value }}" {% if poi and poi.category == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Near campsite</label>
+            <select class="form-select" name="stop_id">
+                <option value="">None</option>
+                {% for stop in stops %}
+                <option value="{{ stop.stop_id }}" {% if poi and poi.stop_id == stop.stop_id %}selected{% endif %}>{{ stop.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3"><label class="form-label">Latitude</label><input class="form-control" name="latitude" value="{{ poi.latitude if poi else request.args.get('lat', '') }}" required></div>
+        <div class="col-md-3"><label class="form-label">Longitude</label><input class="form-control" name="longitude" value="{{ poi.longitude if poi else request.args.get('lon', '') }}" required></div>
+        <div class="col-md-6"><label class="form-label">Address</label><input class="form-control" name="address" value="{{ poi.address if poi else '' }}"></div>
+        <div class="col-md-6"><label class="form-label">Website</label><input class="form-control" name="website" value="{{ poi.website if poi else '' }}"></div>
+        <div class="col-12"><label class="form-label">Notes</label><textarea class="form-control" name="notes" rows="4">{{ poi.notes if poi else '' }}</textarea></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-success" type="submit">Save POI</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">Cancel</a></div>
+</form>
+{% endblock %}

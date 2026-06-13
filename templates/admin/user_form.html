@@ -1,0 +1,39 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ "Edit User" if user else "New User" }}{% endblock %}
+{% block admin_content %}
+<div class="page-heading"><h1>{{ "Edit User" if user else "New User" }}</h1></div>
+<form class="panel form-narrow" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Username</label><input class="form-control" name="username" value="{{ user.username if user else '' }}" {% if user %}disabled{% endif %} required></div>
+        <div class="col-md-6"><label class="form-label">Email</label><input class="form-control" name="email" type="email" value="{{ user.email if user else '' }}" required></div>
+        <div class="col-md-6"><label class="form-label">First name</label><input class="form-control" name="first_name" value="{{ user.first_name if user else '' }}"></div>
+        <div class="col-md-6"><label class="form-label">Last name</label><input class="form-control" name="last_name" value="{{ user.last_name if user else '' }}"></div>
+        <div class="col-md-6">
+            <label class="form-label">Role</label>
+            <select class="form-select" name="role">
+                <option value="user" {% if user and user.role == 'user' %}selected{% endif %}>User</option>
+                <option value="admin" {% if user and user.role == 'admin' %}selected{% endif %}>Admin</option>
+            </select>
+        </div>
+        <div class="col-md-6 d-flex align-items-end"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" id="active" {% if not user or user.is_active %}checked{% endif %}><label class="form-check-label" for="active">Active</label></div></div>
+        {% if not user %}
+        <div class="col-md-6"><label class="form-label">Password</label><input class="form-control" name="password" type="password" required minlength="8"></div>
+        {% endif %}
+    </div>
+    <div class="form-actions"><button class="btn btn-success" type="submit">Save User</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.users_list') }}">Cancel</a></div>
+</form>
+{% if user %}
+<form class="panel form-narrow mt-3" method="POST" action="{{ url_for('admin.reset_password', user_id=user.user_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="form-label">New password</label>
+    <div class="input-group"><input class="form-control" name="password" type="password" minlength="8" required><button class="btn btn-outline-danger" type="submit">Reset</button></div>
+</form>
+{% if user.user_id != current_user.user_id %}
+<form class="panel form-narrow mt-3" method="POST" action="{{ url_for('admin.delete_user', user_id=user.user_id) }}" onsubmit="return confirm('Delete this user?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-outline-danger" type="submit"><i class="bi bi-trash"></i> Delete User</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

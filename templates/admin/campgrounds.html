@@ -1,0 +1,72 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Campground Data{% endblock %}
+{% block admin_content %}
+<div class="page-heading">
+    <div>
+        <h1>Campground Data</h1>
+        <p class="text-muted mb-0">Known campsite data is synchronized from GpxFeed/campgrounds.</p>
+    </div>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-success" type="submit"><i class="bi bi-arrow-repeat"></i> Check/Update Now</button>
+    </form>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card"><span>{{ status.campground_count }}</span><label>Campgrounds</label></div>
+    <div class="stat-card"><span>{{ status.file_count }}</span><label>GpxFeed files</label></div>
+    <div class="stat-card"><span>{{ status.commit_sha[:12] if status.commit_sha else "None" }}</span><label>Dataset commit</label></div>
+</div>
+
+<div class="panel">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <strong>Last checked</strong>
+            <div class="text-muted">{{ status.last_checked_at or "Not checked yet" }}</div>
+        </div>
+        <div class="col-md-4">
+            <strong>Last imported</strong>
+            <div class="text-muted">{{ status.last_imported_at or "Not imported yet" }}</div>
+        </div>
+        <div class="col-md-4">
+            <strong>Status</strong>
+            <div class="text-muted">{{ status.last_status }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="panel mt-3">
+    <form class="campground-search" method="GET">
+        <input class="form-control" name="q" value="{{ q }}" placeholder="Search known campgrounds">
+        <button class="btn btn-outline-secondary" type="submit">Search</button>
+    </form>
+    <div class="table-responsive mt-3">
+        <table class="table align-middle">
+            <thead><tr><th>Name</th><th>Coordinates</th><th>Description</th><th>Add to Trip</th></tr></thead>
+            <tbody>
+                {% for campground in campgrounds %}
+                <tr>
+                    <td><strong>{{ campground.name }}</strong>{% if campground.website %}<div><a href="{{ campground.website }}" target="_blank" rel="noopener">Website</a></div>{% endif %}</td>
+                    <td>{{ "%.5f"|format(campground.latitude) }}, {{ "%.5f"|format(campground.longitude) }}</td>
+                    <td class="text-truncate" style="max-width: 360px">{{ campground.description }}</td>
+                    <td>
+                        <form class="d-flex gap-2" method="POST" action="{{ url_for('admin.choose_campground_trip', campground_id=campground.campground_id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <select class="form-select form-select-sm" name="trip_id" required>
+                                <option value="">Trip</option>
+                                {% for trip in trips %}
+                                <option value="{{ trip.trip_id }}">{{ trip.title }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-sm btn-outline-success" type="submit">Add</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-muted">No campgrounds found yet. Use Check/Update Now, or wait for the background updater.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

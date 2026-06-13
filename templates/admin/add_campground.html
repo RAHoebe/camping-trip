@@ -1,0 +1,32 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Add Campground{% endblock %}
+{% block admin_content %}
+<div class="page-heading"><h1>Add {{ campground.name }}</h1></div>
+<form class="panel form-narrow" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="text-muted">Add this imported campground to <strong>{{ trip.title }}</strong>.</p>
+    <div class="row g-3">
+        <div class="col-md-4"><label class="form-label">Arrival date</label><input class="form-control" type="date" name="arrival_date" value="{{ default_arrival_date }}" required></div>
+        <div class="col-md-4"><label class="form-label">Nights</label><input class="form-control" type="number" min="1" name="nights" value="{{ nights }}" required></div>
+        <div class="col-md-4"><label class="form-label">Calculated departure</label><input class="form-control" id="calculatedDeparture" readonly></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-success" type="submit">Add Campsite</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">Cancel</a></div>
+</form>
+<script>
+(function() {
+    const arrival = document.querySelector('[name="arrival_date"]');
+    const nights = document.querySelector('[name="nights"]');
+    const output = document.getElementById('calculatedDeparture');
+    function updateDeparture() {
+        if (!arrival || !nights || !output || !arrival.value) return;
+        const date = new Date(arrival.value + 'T00:00:00');
+        const count = Math.max(1, parseInt(nights.value || '1', 10));
+        date.setDate(date.getDate() + count);
+        output.value = date.toISOString().slice(0, 10);
+    }
+    arrival && arrival.addEventListener('change', updateDeparture);
+    nights && nights.addEventListener('input', updateDeparture);
+    updateDeparture();
+})();
+</script>
+{% endblock %}

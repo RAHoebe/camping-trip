@@ -1,0 +1,30 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Admin{% endblock %}
+{% block admin_content %}
+<div class="page-heading">
+    <div>
+        <h1>Dashboard</h1>
+        <p class="text-muted mb-0">Manage trips, campgrounds, users, and planner settings.</p>
+    </div>
+    <a class="btn btn-success" href="{{ url_for('admin.create_trip') }}"><i class="bi bi-plus-lg"></i> New Trip</a>
+</div>
+<div class="stat-grid">
+    <div class="stat-card"><span>{{ stats.trips }}</span><label>Trips</label></div>
+    <div class="stat-card"><span>{{ stats.stops }}</span><label>Campsites</label></div>
+    <div class="stat-card"><span>{{ stats.pois }}</span><label>POIs</label></div>
+    <div class="stat-card"><span>{{ stats.campgrounds }}</span><label>Imported Campgrounds</label></div>
+    <div class="stat-card"><span>{{ stats.users }}</span><label>Users</label></div>
+</div>
+<div class="panel">
+    <h2>Recent Trips</h2>
+    <div class="list-group list-group-flush">
+        {% for trip in recent_trips %}
+        <a class="list-group-item list-group-item-action" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">
+            {{ trip.title }} <span class="text-muted small">{{ trip.start_date|date_span(trip.end_date) }}</span>
+        </a>
+        {% else %}
+        <div class="text-muted">No trips yet.</div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

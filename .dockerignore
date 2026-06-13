@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.secret_key
+graphhopper.key
+*.md
+data/
+Videos/
+*.cmd
+.vscode/
+.env
+.dockerignore
+LICENSE

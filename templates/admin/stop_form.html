@@ -1,0 +1,81 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ "Edit Campsite" if stop else "New Campsite" }}{% endblock %}
+{% block admin_content %}
+<div class="page-heading"><h1>{{ "Edit Campsite" if stop else "New Campsite" }}</h1></div>
+<form class="panel form-wide" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+        <div class="col-md-8"><label class="form-label">Name</label><input class="form-control" name="name" value="{{ stop.name if stop else request.args.get('name', '') }}" required></div>
+        <div class="col-md-2"><label class="form-label">Latitude</label><input class="form-control" name="latitude" value="{{ stop.latitude if stop else request.args.get('lat', '') }}" required></div>
+        <div class="col-md-2"><label class="form-label">Longitude</label><input class="form-control" name="longitude" value="{{ stop.longitude if stop else request.args.get('lon', '') }}" required></div>
+        <div class="col-md-3"><label class="form-label">Arrival date</label><input class="form-control" name="arrival_date" type="date" value="{{ stop.arrival_date if stop else default_arrival_date }}" required></div>
+        <div class="col-md-3"><label class="form-label">Nights</label><input class="form-control" name="nights" type="number" min="1" value="{{ nights }}" required></div>
+        <div class="col-md-3"><label class="form-label">Calculated departure</label><input class="form-control" id="calculatedDeparture" value="{{ stop.departure_date if stop else '' }}" readonly></div>
+        <div class="col-md-6"><label class="form-label">Booking reference</label><input class="form-control" name="booking_reference" value="{{ stop_details.booking_reference }}"></div>
+        <div class="col-md-6"><label class="form-label">Address</label><input class="form-control" name="address" value="{{ stop_details.address }}"></div>
+        <div class="col-md-3"><label class="form-label">Website</label><input class="form-control" name="website" value="{{ stop_details.website }}"></div>
+        <div class="col-md-3"><label class="form-label">Phone</label><input class="form-control" name="phone" value="{{ stop_details.phone }}"></div>
+        <div class="col-md-6 d-flex align-items-end">
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input" type="checkbox" id="isLastStop" name="is_last_stop" {% if stop and stop.is_last_stop %}checked{% endif %}>
+                <label class="form-check-label" for="isLastStop">Last campsite of trip</label>
+            </div>
+        </div>
+        <div class="col-12">
+            {% if stop_details.source_details %}
+            <div class="source-details">
+                <div class="source-details-heading">
+                    <i class="bi bi-database"></i>
+                    <span>Imported campsite details</span>
+                </div>
+                <div class="source-details-grid">
+                    {% for item in stop_details.source_details %}
+                    <div>
+                        <span>{{ item["label"] }}</span>
+                        <strong>{{ item["value"] }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <div class="col-12">
+            <label class="form-label">Personal notes</label>
+            <textarea class="form-control" name="personal_notes" rows="4" placeholder="Add your own notes, booking reminders, pitch number, check-in details, or anything else useful for the trip.">{{ stop_details.personal_notes }}</textarea>
+        </div>
+    </div>
+    <div class="form-actions"><button class="btn btn-success" type="submit">Save Campsite</button><a class="btn btn-outline-secondary" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">Cancel</a></div>
+</form>
+<script>
+(function() {
+    const arrival = document.querySelector('[name="arrival_date"]');
+    const nights = document.querySelector('[name="nights"]');
+    const output = document.getElementById('calculatedDeparture');
+    function updateDeparture() {
+        if (!arrival || !nights || !output || !arrival.value) return;
+        const date = new Date(arrival.value + 'T00:00:00');
+        const count = Math.max(1, parseInt(nights.value || '1', 10));
+        date.setDate(date.getDate() + count);
+        output.value = date.toISOString().slice(0, 10);
+    }
+    arrival && arrival.addEventListener('change', updateDeparture);
+    nights && nights.addEventListener('input', updateDeparture);
+    updateDeparture();
+
+    const lastStop = document.getElementById('isLastStop');
+    const existingLastStop = {{ ({'stop_id': existing_last_stop.stop_id, 'name': existing_last_stop.name} if existing_last_stop else none)|tojson }};
+    if (lastStop && existingLastStop) {
+        lastStop.addEventListener('change', function() {
+            if (!lastStop.checked) return;
+            const ok = window.confirm(
+                '"' + existingLastStop.name + '" is already marked as the last campsite. ' +
+                'Checking this will replace it. Continue?'
+            );
+            if (!ok) {
+                lastStop.checked = false;
+            }
+        });
+    }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ "Edit Trip" if trip else "New Trip" }}{% endblock %}
+{% block admin_content %}
+<div class="page-heading"><h1>{{ "Edit Trip" if trip else "New Trip" }}</h1></div>
+<form class="panel form-narrow" method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-3">
+        <label class="form-label">Title</label>
+        <input class="form-control" name="title" value="{{ trip.title if trip else '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Description</label>
+        <textarea class="form-control" name="description" rows="4">{{ trip.description if trip else '' }}</textarea>
+    </div>
+    <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Start date</label><input class="form-control" name="start_date" type="date" value="{{ trip.start_date if trip else '' }}"></div>
+        <div class="col-md-6"><label class="form-label">End date</label><input class="form-control" name="end_date" type="date" value="{{ trip.end_date if trip else '' }}"></div>
+    </div>
+    <div class="form-actions">
+        <button class="btn btn-success" type="submit">Save Trip</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.trips_list') }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}
