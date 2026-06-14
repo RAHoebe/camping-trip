@@ -2,6 +2,7 @@
 import hashlib
 import json
 import logging
+import math
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -219,6 +220,25 @@ def init_database():
         """)
 
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trip_tracks (
+                track_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                trip_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                activity_type TEXT NOT NULL DEFAULT 'cycling',
+                show_on_map INTEGER DEFAULT 1,
+                original_filename TEXT NOT NULL,
+                stored_filename TEXT NOT NULL,
+                line_geojson TEXT NOT NULL,
+                distance_m REAL,
+                waypoints_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (trip_id) REFERENCES trips(trip_id) ON DELETE CASCADE
+            )
+        """)
+        _ensure_column(cursor, "trip_tracks", "distance_m", "REAL")
+
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS route_cache (
                 cache_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 trip_id INTEGER NOT NULL,
@@ -258,6 +278,7 @@ def init_database():
             "CREATE INDEX IF NOT EXISTS idx_trips_dates ON trips(start_date, end_date)",
             "CREATE INDEX IF NOT EXISTS idx_trip_stops_trip_dates ON trip_stops(trip_id, arrival_date, departure_date)",
             "CREATE INDEX IF NOT EXISTS idx_pois_trip ON pois(trip_id)",
+            "CREATE INDEX IF NOT EXISTS idx_trip_tracks_trip ON trip_tracks(trip_id)",
             "CREATE INDEX IF NOT EXISTS idx_imported_campgrounds_name ON imported_campgrounds(name)",
             "CREATE INDEX IF NOT EXISTS idx_route_leg_cache_signature ON route_leg_cache(provider, leg_signature)",
         ]
@@ -408,10 +429,12 @@ def list_trips():
         return conn.execute("""
             SELECT t.*,
                    COUNT(DISTINCT s.stop_id) AS stop_count,
-                   COUNT(DISTINCT p.poi_id) AS poi_count
+                   COUNT(DISTINCT p.poi_id) AS poi_count,
+                   COUNT(DISTINCT tr.track_id) AS track_count
             FROM trips t
             LEFT JOIN trip_stops s ON s.trip_id = t.trip_id
             LEFT JOIN pois p ON p.trip_id = t.trip_id
+            LEFT JOIN trip_tracks tr ON tr.trip_id = t.trip_id
             GROUP BY t.trip_id
             ORDER BY COALESCE(t.start_date, '9999-12-31'), t.title
         """).fetchall()
@@ -440,6 +463,57 @@ def get_trip_pois(trip_id):
             WHERE p.trip_id = ?
             ORDER BY p.category, p.name
         """, (trip_id,)).fetchall()
+
+
+def _track_row_to_dict(row):
+    track = dict(row)
+    try:
+        track["line"] = json.loads(track.pop("line_geojson") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        track["line"] = {"type": "LineString", "coordinates": []}
+    try:
+        track["waypoints"] = json.loads(track.pop("waypoints_json") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        track["waypoints"] = []
+    track["show_on_map"] = bool(track.get("show_on_map"))
+    if track.get("distance_m") is None:
+        track["distance_m"] = _line_distance_m((track.get("line") or {}).get("coordinates") or [])
+    return track
+
+
+def _line_distance_m(coordinates):
+    total = 0.0
+    radius = 6371008.8
+    for index in range(1, len(coordinates)):
+        try:
+            lon1, lat1 = coordinates[index - 1]
+            lon2, lat2 = coordinates[index]
+        except (TypeError, ValueError):
+            continue
+        phi1 = math.radians(float(lat1))
+        phi2 = math.radians(float(lat2))
+        d_phi = math.radians(float(lat2) - float(lat1))
+        d_lambda = math.radians(float(lon2) - float(lon1))
+        a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+        total += radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return total
+
+
+def get_trip_tracks(trip_id):
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT *
+            FROM trip_tracks
+            WHERE trip_id = ?
+            ORDER BY activity_type, name
+        """, (trip_id,)).fetchall()
+    return [_track_row_to_dict(row) for row in rows]
+
+
+def get_trip_track(track_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM trip_tracks WHERE track_id = ?", (track_id,)).fetchone()
+    return _track_row_to_dict(row) if row else None
 
 
 def stop_signature(stops):

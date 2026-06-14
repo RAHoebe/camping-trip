@@ -10,25 +10,33 @@
         <div class="trip-sidebar-head">
             <a class="small-link" href="{{ url_for('trips.list_trips') }}"><i class="bi bi-arrow-left"></i> Trips</a>
             <h1>{{ trip.title }}</h1>
-            <div class="trip-summary-line stacked">
-                {% if trip.start_date or trip.end_date %}<span>{{ trip.start_date|date_span(trip.end_date) }}</span>{% endif %}
-                {% if stops|trip_days %}<span><i class="bi bi-calendar3"></i> {{ stops|trip_days }} days</span>{% endif %}
-                {% if route.distance_m %}<span><i class="bi bi-signpost"></i> {{ route.distance_m|format_km }}</span>{% endif %}
-                {% if route.duration_s %}<span><i class="bi bi-clock"></i> {{ route.duration_s|format_travel_time }}</span>{% endif %}
+            <div class="trip-summary-block">
+                {% if trip.start_date or trip.end_date %}
+                <div class="trip-date-line">{{ trip.start_date|date_span(trip.end_date) }}</div>
+                {% endif %}
+                <div class="trip-summary-line stacked">
+                    {% if stops|trip_days %}<span><i class="bi bi-calendar3"></i> {{ stops|trip_days }} days</span>{% endif %}
+                    {% if route.distance_m %}<span><i class="bi bi-signpost"></i> {{ route.distance_m|format_km }}</span>{% endif %}
+                    {% if route.duration_s %}<span><i class="bi bi-clock"></i> {{ route.duration_s|format_travel_time }}</span>{% endif %}
+                </div>
             </div>
             <p>{{ trip.description or "No description yet." }}</p>
-            {% if current_user.is_admin %}
-            <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">
-                <i class="bi bi-pencil-square"></i> Edit Plan
-            </a>
-            {% endif %}
-            <div class="button-row mt-2">
-                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('trips.google_maps', trip_id=trip.trip_id) }}" target="_blank" rel="noopener">
-                    <i class="bi bi-map"></i> Google Maps
-                </a>
-                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('trips.download_kml', trip_id=trip.trip_id) }}">
-                    <i class="bi bi-download"></i> KML
-                </a>
+            <div class="trip-head-actions">
+                <div>
+                    {% if current_user.is_admin %}
+                    <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">
+                        <i class="bi bi-pencil-square"></i> Edit Plan
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="trip-export-actions">
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('trips.google_maps', trip_id=trip.trip_id) }}" target="_blank" rel="noopener">
+                        <i class="bi bi-map"></i> Google Maps
+                    </a>
+                    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('trips.download_kml', trip_id=trip.trip_id) }}">
+                        <i class="bi bi-download"></i> KML
+                    </a>
+                </div>
             </div>
         </div>
         <div class="sidebar-section trip-sidebar-list trip-sidebar-campsites">
@@ -60,22 +68,46 @@
             {% endfor %}
         </div>
         <div class="sidebar-section trip-sidebar-list trip-sidebar-pois">
-            <h2>POIs</h2>
+            <h2>POIs and Tracks</h2>
+            {% if pois %}
+            <h3 class="list-subhead">POIs</h3>
+            {% endif %}
             {% for poi in pois %}
             <div class="poi-row">
-                <span class="poi-dot poi-{{ poi.category }}"></span>
+                <span class="poi-list-icon poi-{{ poi.category }}">
+                    <i class="bi bi-{{ {'viewpoint':'binoculars','restaurant':'cup-hot','hike':'person-walking','fuel':'fuel-pump','supermarket':'basket','parking':'p-square','custom':'pin-map'}.get(poi.category, 'pin-map') }}"></i>
+                </span>
                 <div>
                     <strong>{{ poi.name }}</strong>
                     <div class="text-muted small">{{ poi.category|title }}{% if poi.stop_name %} near {{ poi.stop_name }}{% endif %}</div>
                 </div>
             </div>
-            {% else %}
-            <p class="text-muted">No POIs added yet.</p>
             {% endfor %}
+            {% if tracks %}
+            <h3 class="list-subhead">Tracks</h3>
+            {% endif %}
+            {% for track in tracks %}
+            <div class="poi-row track-row">
+                <span class="track-type-icon track-{{ track.activity_type }}">
+                    <i class="bi bi-{{ 'person-walking' if track.activity_type == 'hiking' else 'bicycle' }}"></i>
+                </span>
+                <div class="track-list-body">
+                    <strong>{{ track.name }}</strong>
+                    <div class="track-meta-row">
+                        <span class="text-muted small">{{ track.activity_type|title }}{% if track.distance_m %} ({{ track.distance_m|format_km }}){% endif %}{% if not track.show_on_map %} - hidden on map{% endif %}</span>
+                        <a href="{{ url_for('trips.download_track_gpx', trip_id=trip.trip_id, track_id=track.track_id) }}"><i class="bi bi-download"></i> GPX</a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not pois and not tracks %}
+            <p class="text-muted">No POIs or GPX tracks added yet.</p>
+            {% endif %}
         </div>
     </aside>
     <section class="trip-map-wrap">
         <div id="tripMap" class="trip-map"></div>
+        <div class="map-toolbar" id="mapToolbar"></div>
         <div class="route-status" id="routeStatus">Loading route...</div>
     </section>
 </div>
@@ -88,6 +120,8 @@ window.CAMPING_TRIP = {
     home: {{ home_json|tojson }},
     stops: {{ stops_json|tojson }},
     pois: {{ pois_json|tojson }},
+    tracks: {{ tracks_json|tojson }},
+    trackDownloadBaseUrl: {{ (url_for('trips.trip_detail', trip_id=trip.trip_id).rstrip('/') + '/tracks')|tojson }},
     stopMetrics: {{ route.stop_metrics|tojson }}
 };
 </script>

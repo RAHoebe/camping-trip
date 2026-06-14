@@ -1,0 +1,37 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ "Edit Track" if track else "Upload GPX Track" }}{% endblock %}
+{% block admin_content %}
+<div class="page-heading"><h1>{{ "Edit Track" if track else "Upload GPX Track" }}</h1></div>
+<form method="POST" class="panel form-narrow" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if not track %}
+    <div class="mb-3">
+        <label class="form-label">GPX file</label>
+        <input class="form-control" type="file" name="gpx_file" accept=".gpx,application/gpx+xml" required>
+    </div>
+    {% endif %}
+    <div class="mb-3">
+        <label class="form-label">Name</label>
+        <input class="form-control" name="name" value="{{ track.name if track else '' }}" placeholder="{{ 'Use GPX name' if not track else '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Activity type</label>
+        <select class="form-select" name="activity_type">
+            {% for value, label in [('cycling','Cycling'),('hiking','Hiking')] %}
+            <option value="{{ value }}" {% if (track and track.activity_type == value) or (not track and value == 'cycling') %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-check form-switch mb-3">
+        <input class="form-check-input" type="checkbox" id="show_on_map" name="show_on_map" {% if not track or track.show_on_map %}checked{% endif %}>
+        <label class="form-check-label" for="show_on_map">Show on map</label>
+    </div>
+    {% if track %}
+    <p class="text-muted small">Original file: {{ track.original_filename }}</p>
+    {% endif %}
+    <div class="form-actions">
+        <button class="btn btn-success" type="submit">{{ "Save Track" if track else "Upload Track" }}</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">Cancel</a>
+    </div>
+</form>
+{% endblock %}

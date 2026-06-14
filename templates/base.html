@@ -73,6 +73,9 @@
 
     <footer class="app-footer">
         <span>{{ site_title }} {{ app_version }} &copy; {{ now().year }}</span>
+        <a class="footer-link" href="https://github.com/RAHoebe/camping-trip" target="_blank" rel="noopener">
+            <i class="bi bi-github"></i> GitHub
+        </a>
         {% if update_available and latest_version %}
         <a class="badge text-bg-warning text-decoration-none ms-2" href="{{ docker_hub_page }}" target="_blank" rel="noopener">
             <i class="bi bi-arrow-up-circle"></i> {{ latest_version }} available

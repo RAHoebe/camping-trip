@@ -40,6 +40,7 @@ PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
 DATA_FOLDER = os.environ.get("DATA_FOLDER", os.path.join(BASE_DIR, "data"))
 DATABASE_PATH = os.path.join(DATA_FOLDER, "camping_trip.db")
 UPLOAD_FOLDER = os.path.join(DATA_FOLDER, "uploads")
+TRACK_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, "tracks")
 
 ITEMS_PER_PAGE = 24
 MAX_CONTENT_LENGTH = 64 * 1024 * 1024

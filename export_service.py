@@ -2,7 +2,7 @@
 from urllib.parse import urlencode
 from xml.etree import ElementTree as ET
 
-from database import get_home_location, get_trip, get_trip_pois, get_trip_stops
+from database import get_home_location, get_trip, get_trip_pois, get_trip_stops, get_trip_tracks
 from route_service import get_route_for_trip
 
 
@@ -65,6 +65,7 @@ def trip_kml(trip_id):
     trip = get_trip(trip_id)
     stops = get_trip_stops(trip_id)
     pois = get_trip_pois(trip_id)
+    tracks = get_trip_tracks(trip_id)
     home = get_home_location()
     route = get_route_for_trip(trip_id)
     line_coordinates = []
@@ -98,6 +99,18 @@ def trip_kml(trip_id):
         ET.SubElement(line, "tessellate").text = "1"
         ET.SubElement(line, "coordinates").text = " ".join(
             _coord_text(coord[0], coord[1]) for coord in line_coordinates
+        )
+
+    for track in tracks:
+        coordinates = (track.get("line") or {}).get("coordinates") or []
+        if not coordinates:
+            continue
+        placemark = ET.SubElement(document, "Placemark")
+        ET.SubElement(placemark, "name").text = f"{track['activity_type'].title()}: {track['name']}"
+        line = ET.SubElement(placemark, "LineString")
+        ET.SubElement(line, "tessellate").text = "1"
+        ET.SubElement(line, "coordinates").text = " ".join(
+            _coord_text(coord[0], coord[1]) for coord in coordinates
         )
 
     return ET.tostring(kml, encoding="utf-8", xml_declaration=True)

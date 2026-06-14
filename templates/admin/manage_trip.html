@@ -7,17 +7,20 @@
 <div class="page-heading">
     <div>
         <h1>{{ trip.title }}</h1>
-        <div class="trip-summary-line">
-            <span>{{ trip.start_date|date_span(trip.end_date) }}</span>
-            {% if stops|trip_days %}<span><i class="bi bi-calendar3"></i> {{ stops|trip_days }} days</span>{% endif %}
-            {% if route.distance_m %}<span><i class="bi bi-signpost"></i> {{ route.distance_m|format_km }}</span>{% endif %}
-            {% if route.duration_s %}<span><i class="bi bi-clock"></i> {{ route.duration_s|format_travel_time }}</span>{% endif %}
+        <div class="trip-summary-block">
+            <div class="trip-date-line">{{ trip.start_date|date_span(trip.end_date) }}</div>
+            <div class="trip-summary-line">
+                {% if stops|trip_days %}<span><i class="bi bi-calendar3"></i> {{ stops|trip_days }} days</span>{% endif %}
+                {% if route.distance_m %}<span><i class="bi bi-signpost"></i> {{ route.distance_m|format_km }}</span>{% endif %}
+                {% if route.duration_s %}<span><i class="bi bi-clock"></i> {{ route.duration_s|format_travel_time }}</span>{% endif %}
+            </div>
         </div>
     </div>
     <div class="button-row">
         <a class="btn btn-outline-secondary" href="{{ url_for('trips.trip_detail', trip_id=trip.trip_id) }}"><i class="bi bi-eye"></i> View</a>
         <a class="btn btn-outline-secondary" href="{{ url_for('trips.google_maps', trip_id=trip.trip_id) }}" target="_blank" rel="noopener"><i class="bi bi-map"></i> Google Maps</a>
         <a class="btn btn-outline-secondary" href="{{ url_for('trips.download_kml', trip_id=trip.trip_id) }}"><i class="bi bi-download"></i> KML</a>
+        <a class="btn btn-outline-success" href="{{ url_for('admin.create_track', trip_id=trip.trip_id) }}"><i class="bi bi-upload"></i> Upload GPX Track</a>
         <form method="POST" action="{{ url_for('admin.sync_trip_dates', trip_id=trip.trip_id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-calendar-check"></i> Sync Dates</button>
@@ -98,10 +101,20 @@
 
     <section class="panel">
         <div class="panel-head">
-            <h2>POIs</h2>
+            <h2>POIs and Tracks</h2>
+            <div class="button-row">
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.create_poi', trip_id=trip.trip_id) }}"><i class="bi bi-pin-map"></i> POI</a>
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.create_track', trip_id=trip.trip_id) }}"><i class="bi bi-upload"></i> GPX</a>
+            </div>
         </div>
+        {% if pois %}
+        <h3 class="list-subhead">POIs</h3>
+        {% endif %}
         {% for poi in pois %}
         <div class="manage-row poi-manage-row">
+            <span class="poi-list-icon poi-{{ poi.category }}">
+                <i class="bi bi-{{ {'viewpoint':'binoculars','restaurant':'cup-hot','hike':'person-walking','fuel':'fuel-pump','supermarket':'basket','parking':'p-square','custom':'pin-map'}.get(poi.category, 'pin-map') }}"></i>
+            </span>
             <div>
                 <strong>{{ poi.name }}</strong>
                 <div class="text-muted small">{{ poi.category|title }}{% if poi.stop_name %} near {{ poi.stop_name }}{% endif %}</div>
@@ -118,9 +131,38 @@
                 </form>
             </div>
         </div>
-        {% else %}
-        <p class="text-muted">No manual POIs yet.</p>
         {% endfor %}
+        {% if tracks %}
+        <h3 class="list-subhead">Tracks</h3>
+        {% endif %}
+        {% for track in tracks %}
+        <div class="manage-row track-manage-row">
+            <span class="track-type-icon track-{{ track.activity_type }}">
+                <i class="bi bi-{{ 'person-walking' if track.activity_type == 'hiking' else 'bicycle' }}"></i>
+            </span>
+            <div class="track-list-body">
+                <strong>{{ track.name }}</strong>
+                <div class="track-meta-row">
+                    <span class="text-muted small">{{ track.activity_type|title }}{% if track.distance_m %} ({{ track.distance_m|format_km }}){% endif %}{% if not track.show_on_map %} - hidden on map{% endif %}</span>
+                    <a href="{{ url_for('trips.download_track_gpx', trip_id=trip.trip_id, track_id=track.track_id) }}"><i class="bi bi-download"></i> GPX</a>
+                </div>
+            </div>
+            <div class="icon-actions">
+                <a class="icon-btn" href="{{ url_for('admin.edit_track', track_id=track.track_id) }}" title="Edit track" aria-label="Edit track">
+                    <i class="bi bi-pencil"></i>
+                </a>
+                <form method="POST" action="{{ url_for('admin.delete_track', track_id=track.track_id) }}" onsubmit="return confirm('Delete this track?')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="icon-btn danger" type="submit" title="Delete track" aria-label="Delete track">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+        {% if not pois and not tracks %}
+        <p class="text-muted">No manual POIs or GPX tracks yet.</p>
+        {% endif %}
     </section>
 
     <section class="panel">
@@ -145,7 +187,9 @@ window.CAMPING_TRIP = {
     home: {{ home_json|tojson }},
     stops: {{ stops_json|tojson }},
     pois: {{ pois_json|tojson }},
+    tracks: {{ tracks_json|tojson }},
     stopMetrics: {{ route.stop_metrics|tojson }},
+    trackDownloadBaseUrl: {{ (url_for('trips.trip_detail', trip_id=trip.trip_id).rstrip('/') + '/tracks')|tojson }},
     admin: {
         addStopUrl: {{ url_for('admin.create_stop', trip_id=trip.trip_id)|tojson }},
         addPoiUrl: {{ url_for('admin.create_poi', trip_id=trip.trip_id)|tojson }},

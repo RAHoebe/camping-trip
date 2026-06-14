@@ -1,11 +1,12 @@
 # Deploying Camping Trip Planner to Synology NAS
 
-This app follows the same Docker-oriented deployment style as `fam_video`.
+Source repository: [RAHoebe/camping-trip](https://github.com/RAHoebe/camping-trip).
 
 ## Build and Push
 
 ```bash
-cd u:\Ron\Documents\Github\camping-trip
+git clone https://github.com/RAHoebe/camping-trip.git
+cd camping-trip
 builddocker.cmd
 docker tag camping_trip:latest your-dockerhub-username/camping_trip:latest
 docker push your-dockerhub-username/camping_trip:latest
@@ -16,14 +17,12 @@ docker push your-dockerhub-username/camping_trip:latest
 Create:
 
 ```text
-/volume1/docker/camping_trip/
-`-- data/
-    `-- uploads/
+/volume1/docker/camping_trip/data/
 ```
 
 Mount `/volume1/docker/camping_trip/data` to `/app/data`.
 
-For Docker on Synology, add the GraphHopper key as an environment variable.
+For Docker on Synology, add the GraphHopper key as an environment variable. Uploaded GPX tracks, the SQLite database, settings, imported campground data, and route cache are all stored under this data volume.
 
 ## Portainer Install
 
@@ -114,7 +113,7 @@ When you publish a new Docker image:
 5. Enable **Re-pull image and redeploy** / **Pull latest image** if Portainer shows that option.
 6. Click **Update the stack**.
 
-The `/volume1/docker/camping_trip/data` volume is reused, so the SQLite database, settings, GpxFeed data, and route cache stay in place.
+The `/volume1/docker/camping_trip/data` volume is reused, so the SQLite database, settings, uploaded GPX tracks, GpxFeed data, and route cache stay in place.
 
 ## Container Settings
 
@@ -156,9 +155,13 @@ If the database is empty, the app creates one admin account from `DEFAULT_ADMIN_
 
 ## Reverse Proxy
 
-Use DSM reverse proxy the same way as `fam_video`:
+Use DSM reverse proxy:
 
 - Source: your chosen HTTPS hostname.
 - Destination: `http://127.0.0.1:8034`.
 - Enable WebSocket support if available.
 - Set `HTTPS_ENABLED=true` when the app is only accessed through HTTPS.
+
+## Credits
+
+This app can use [GpxFeed/campgrounds](https://github.com/GpxFeed/campgrounds), [GraphHopper](https://www.graphhopper.com/), [OSRM](https://project-osrm.org/), [OpenStreetMap](https://www.openstreetmap.org/copyright), and [Leaflet](https://leafletjs.com/). Check each project or service for its own license, attribution, rate-limit, and API-key requirements.

@@ -37,6 +37,7 @@ login_manager.login_message_category = "info"
 
 os.makedirs(config.DATA_FOLDER, exist_ok=True)
 os.makedirs(config.UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(config.TRACK_UPLOAD_FOLDER, exist_ok=True)
 init_database()
 
 

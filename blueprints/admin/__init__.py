@@ -1,15 +1,23 @@
-"""Admin routes for users, trips, stops, POIs, and GPX imports."""
+"""Admin routes for users, trips, stops, POIs, tracks, and GPX imports."""
+import json
+import os
+import uuid
+
 import bcrypt
 from datetime import datetime, timedelta
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
+from werkzeug.utils import secure_filename
 
 from blueprints.auth import admin_required
-from database import get_db, get_all_settings, get_home_location, get_trip, get_trip_pois, get_trip_stops, log_audit, rows_to_dicts, set_setting
+import config
+from database import get_db, get_all_settings, get_home_location, get_trip, get_trip_pois, get_trip_stops, get_trip_track, get_trip_tracks, log_audit, rows_to_dicts, set_setting
 from gpx_import import get_gpxfeed_status, update_gpxfeed_if_needed
+from gpx_tracks import GpxTrackError, parse_gpx_track
 from route_service import get_route_for_trip
 
 admin_bp = Blueprint("admin", __name__)
+TRACK_ACTIVITY_TYPES = {"cycling", "hiking"}
 
 
 def _float_field(name):
@@ -18,6 +26,31 @@ def _float_field(name):
         return float(value)
     except ValueError:
         raise ValueError(f"{name.replace('_', ' ').title()} must be a number.")
+
+
+def _track_upload_path(stored_filename):
+    base = os.path.abspath(config.TRACK_UPLOAD_FOLDER)
+    path = os.path.abspath(os.path.join(base, stored_filename or ""))
+    if not path.startswith(base + os.sep):
+        raise ValueError("Invalid stored track filename.")
+    return path
+
+
+def _remove_track_file(track):
+    try:
+        path = _track_upload_path(track["stored_filename"])
+    except (KeyError, ValueError):
+        return
+    if os.path.exists(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def _track_activity_type():
+    activity_type = request.form.get("activity_type", "cycling").strip()
+    return activity_type if activity_type in TRACK_ACTIVITY_TYPES else "cycling"
 
 
 def _calculate_departure_date(arrival_date, nights):
@@ -211,6 +244,7 @@ def index():
             "trips": conn.execute("SELECT COUNT(*) AS count FROM trips").fetchone()["count"],
             "stops": conn.execute("SELECT COUNT(*) AS count FROM trip_stops").fetchone()["count"],
             "pois": conn.execute("SELECT COUNT(*) AS count FROM pois").fetchone()["count"],
+            "tracks": conn.execute("SELECT COUNT(*) AS count FROM trip_tracks").fetchone()["count"],
             "campgrounds": conn.execute("SELECT COUNT(*) AS count FROM imported_campgrounds").fetchone()["count"],
             "users": conn.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"],
         }
@@ -315,10 +349,14 @@ def delete_user(user_id):
 def trips_list():
     with get_db() as conn:
         trips = conn.execute("""
-            SELECT t.*, COUNT(DISTINCT s.stop_id) AS stop_count, COUNT(DISTINCT p.poi_id) AS poi_count
+            SELECT t.*,
+                   COUNT(DISTINCT s.stop_id) AS stop_count,
+                   COUNT(DISTINCT p.poi_id) AS poi_count,
+                   COUNT(DISTINCT tr.track_id) AS track_count
             FROM trips t
             LEFT JOIN trip_stops s ON s.trip_id = t.trip_id
             LEFT JOIN pois p ON p.trip_id = t.trip_id
+            LEFT JOIN trip_tracks tr ON tr.trip_id = t.trip_id
             GROUP BY t.trip_id
             ORDER BY COALESCE(t.start_date, '9999-12-31'), t.title
         """).fetchall()
@@ -379,6 +417,7 @@ def manage_trip(trip_id):
         abort(404)
     stops = get_trip_stops(trip_id)
     pois = get_trip_pois(trip_id)
+    tracks = get_trip_tracks(trip_id)
     route = get_route_for_trip(trip_id, calculate=False)
     home = get_home_location()
     return render_template(
@@ -386,10 +425,12 @@ def manage_trip(trip_id):
         trip=trip,
         stops=stops,
         pois=pois,
+        tracks=tracks,
         route=route,
         warnings=_trip_warnings(stops, home),
         stops_json=rows_to_dicts(stops),
         pois_json=rows_to_dicts(pois),
+        tracks_json=tracks,
         home_json=home,
     )
 
@@ -632,6 +673,107 @@ def delete_poi(poi_id):
     log_audit(current_user.user_id, "DELETE_POI", poi["name"], "poi", poi_id)
     flash("POI deleted.", "success")
     return redirect(url_for("admin.manage_trip", trip_id=poi["trip_id"]))
+
+
+@admin_bp.route("/trips/<int:trip_id>/tracks/create", methods=["GET", "POST"])
+@admin_required
+def create_track(trip_id):
+    trip = get_trip(trip_id)
+    if not trip:
+        abort(404)
+    if request.method == "POST":
+        upload = request.files.get("gpx_file")
+        if not upload or not upload.filename:
+            flash("Choose a GPX file to upload.", "danger")
+            return render_template("admin/track_form.html", trip=trip, track=None)
+        original_filename = secure_filename(upload.filename) or "track.gpx"
+        if not original_filename.lower().endswith(".gpx"):
+            flash("Track uploads must be GPX files.", "danger")
+            return render_template("admin/track_form.html", trip=trip, track=None)
+        payload = upload.read()
+        try:
+            parsed = parse_gpx_track(original_filename, payload)
+        except GpxTrackError as exc:
+            flash(str(exc), "danger")
+            return render_template("admin/track_form.html", trip=trip, track=None)
+
+        os.makedirs(config.TRACK_UPLOAD_FOLDER, exist_ok=True)
+        stored_filename = f"{uuid.uuid4().hex}-{original_filename}"
+        path = _track_upload_path(stored_filename)
+        with open(path, "wb") as track_file:
+            track_file.write(payload)
+
+        name = request.form.get("name", "").strip() or parsed["name"]
+        activity_type = _track_activity_type()
+        show_on_map = 1 if request.form.get("show_on_map", "on") == "on" else 0
+        try:
+            with get_db() as conn:
+                track_id = conn.execute("""
+                    INSERT INTO trip_tracks
+                        (trip_id, name, activity_type, show_on_map, original_filename, stored_filename,
+                         line_geojson, distance_m, waypoints_json)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    trip_id,
+                    name,
+                    activity_type,
+                    show_on_map,
+                    original_filename,
+                    stored_filename,
+                    json.dumps(parsed["line"]),
+                    parsed["distance_m"],
+                    json.dumps(parsed["waypoints"]),
+                )).lastrowid
+        except Exception:
+            if os.path.exists(path):
+                os.remove(path)
+            raise
+        log_audit(current_user.user_id, "SAVE_TRACK", name, "track", track_id)
+        flash("Track uploaded.", "success")
+        return redirect(url_for("admin.manage_trip", trip_id=trip_id))
+    return render_template("admin/track_form.html", trip=trip, track=None)
+
+
+@admin_bp.route("/tracks/<int:track_id>/edit", methods=["GET", "POST"])
+@admin_required
+def edit_track(track_id):
+    track = get_trip_track(track_id)
+    if not track:
+        abort(404)
+    trip = get_trip(track["trip_id"])
+    if not trip:
+        abort(404)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Track name is required.", "danger")
+            return render_template("admin/track_form.html", trip=trip, track=track)
+        activity_type = _track_activity_type()
+        show_on_map = 1 if request.form.get("show_on_map") == "on" else 0
+        with get_db() as conn:
+            conn.execute("""
+                UPDATE trip_tracks
+                SET name = ?, activity_type = ?, show_on_map = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE track_id = ?
+            """, (name, activity_type, show_on_map, track_id))
+        log_audit(current_user.user_id, "SAVE_TRACK", name, "track", track_id)
+        flash("Track saved.", "success")
+        return redirect(url_for("admin.manage_trip", trip_id=track["trip_id"]))
+    return render_template("admin/track_form.html", trip=trip, track=track)
+
+
+@admin_bp.route("/tracks/<int:track_id>/delete", methods=["POST"])
+@admin_required
+def delete_track(track_id):
+    track = get_trip_track(track_id)
+    if not track:
+        abort(404)
+    with get_db() as conn:
+        conn.execute("DELETE FROM trip_tracks WHERE track_id = ?", (track_id,))
+    _remove_track_file(track)
+    log_audit(current_user.user_id, "DELETE_TRACK", track["name"], "track", track_id)
+    flash("Track deleted.", "success")
+    return redirect(url_for("admin.manage_trip", trip_id=track["trip_id"]))
 
 
 @admin_bp.route("/campgrounds", methods=["GET", "POST"])

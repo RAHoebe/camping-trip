@@ -1,5 +1,5 @@
 (function () {
-  const data = window.CAMPING_TRIP || { stops: [], pois: [] };
+  const data = window.CAMPING_TRIP || { stops: [], pois: [], tracks: [] };
   const mapEl = document.getElementById("tripMap");
   const statusEl = document.getElementById("routeStatus");
   const toolbarEl = document.getElementById("mapToolbar");
@@ -13,6 +13,8 @@
 
   const bounds = [];
   let routeLine = null;
+  let trackLayer = null;
+  let tracksVisible = true;
   let campgroundLayer = null;
   let campgroundVisible = true;
   let campgroundRadiusKm = 20;
@@ -129,14 +131,26 @@
 
   function formatGraphhopperCredits(credits, provider) {
     if ((!credits || credits.remaining === undefined || credits.remaining === null || credits.remaining === "") && provider === "graphhopper") {
-      return "GraphHopper credits: refresh route to update";
+      return "credits: refresh route to update";
     }
     if (!credits || credits.remaining === undefined || credits.remaining === null || credits.remaining === "") return "";
     const remainingNumber = Number(credits.remaining);
     const remaining = Number.isFinite(remainingNumber) ? remainingNumber.toLocaleString() : String(credits.remaining);
     const limitNumber = Number(credits.limit);
     const limit = Number.isFinite(limitNumber) ? ` / ${limitNumber.toLocaleString()}` : "";
-    return `GraphHopper credits left: ${remaining}${limit}`;
+    return `credits left: ${remaining}${limit}`;
+  }
+
+  function providerLabel(provider) {
+    if (provider === "graphhopper") return "GraphHopper.com";
+    return provider || "route provider";
+  }
+
+  function providerLabelHtml(provider) {
+    if (provider === "graphhopper") {
+      return '<a href="https://graphhopper.com/dashboard/" target="_blank" rel="noopener">GraphHopper.com</a>';
+    }
+    return escapeHtml(providerLabel(provider));
   }
 
   function dateText(start, end) {
@@ -216,6 +230,32 @@
       iconSize: [28, 28],
       iconAnchor: [14, 14]
     });
+  }
+
+  function trackColor(activityType) {
+    if (activityType === "hiking") return "#16a34a";
+    return "#7c3aed";
+  }
+
+  function trackDownloadUrl(track) {
+    if (!data.trackDownloadBaseUrl || !track || !track.track_id) return "";
+    return `${data.trackDownloadBaseUrl}/${track.track_id}/gpx`;
+  }
+
+  function trackPopupHtml(track) {
+    const downloadUrl = trackDownloadUrl(track);
+    const download = downloadUrl
+      ? `<a class="btn btn-sm btn-outline-success" href="${downloadUrl}"><i class="bi bi-download"></i> GPX</a>`
+      : "";
+    return `
+      <div class="campground-popup-card">
+        <div class="campground-popup-title">${escapeHtml(track.name || "GPX Track")}</div>
+        <div class="campground-popup-details">
+          <div><i class="bi bi-signpost-2"></i><span>${escapeHtml(track.activity_type || "cycling")}</span></div>
+        </div>
+        ${download}
+      </div>
+    `;
   }
 
   function campgroundIcon(campground) {
@@ -319,9 +359,34 @@
       .addTo(map);
   });
 
+  trackLayer = L.layerGroup().addTo(map);
+  (data.tracks || []).forEach(function (track) {
+    if (!track.show_on_map) return;
+    const coordinates = track.line && track.line.coordinates ? track.line.coordinates : [];
+    const latlngs = coordinates.map(function (coord) {
+      return [Number(coord[1]), Number(coord[0])];
+    }).filter(function (latlng) {
+      return Number.isFinite(latlng[0]) && Number.isFinite(latlng[1]);
+    });
+    if (latlngs.length < 2) return;
+    latlngs.forEach(function (latlng) { bounds.push(latlng); });
+    L.polyline(latlngs, {
+      color: trackColor(track.activity_type),
+      weight: 4,
+      opacity: 0.92,
+      lineCap: "round",
+      lineJoin: "round"
+    })
+      .bindPopup(trackPopupHtml(track), { maxWidth: 320 })
+      .addTo(trackLayer);
+  });
+
   if (bounds.length) {
     map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
   }
+
+  let loadVisibleCampgrounds = null;
+  let searchCampgroundsAroundCenter = null;
 
   if (data.admin) {
     campgroundLayer = L.layerGroup().addTo(map);
@@ -374,7 +439,7 @@
       });
     }
 
-    function loadVisibleCampgrounds() {
+    loadVisibleCampgrounds = function () {
       if (!campgroundVisible || !data.admin.campgroundsSearchUrl || map.getZoom() < 8) {
         campgroundLayer.clearLayers();
         return;
@@ -396,9 +461,9 @@
         .catch(function () {
           campgroundLayer.clearLayers();
         });
-    }
+    };
 
-    function searchCampgroundsAroundCenter() {
+    searchCampgroundsAroundCenter = function () {
       if (!campgroundVisible || !data.admin.campgroundsSearchUrl) return;
       lastSearchMode = "radius";
       const center = map.getCenter();
@@ -424,7 +489,7 @@
         .catch(function () {
           campgroundLayer.clearLayers();
         });
-    }
+    };
 
     function queueCampgroundLoad() {
       if (lastSearchMode === "radius") return;
@@ -434,49 +499,6 @@
 
     map.on("moveend zoomend", queueCampgroundLoad);
     queueCampgroundLoad();
-
-    if (toolbarEl) {
-      toolbarEl.innerHTML = `
-        <button class="btn btn-sm btn-light" type="button" data-map-tool="refresh"><i class="bi bi-arrow-clockwise"></i> Refresh route</button>
-        <button class="btn btn-sm btn-light" type="button" data-map-tool="fit"><i class="bi bi-bounding-box"></i> Fit trip</button>
-        <button class="btn btn-sm btn-light" type="button" data-map-tool="toggle-campgrounds"><i class="bi bi-tree"></i> Hide campgrounds</button>
-        <select class="form-select form-select-sm" data-map-tool="radius" aria-label="Campground search radius">
-          <option value="10">10 km</option>
-          <option value="20" selected>20 km</option>
-          <option value="50">50 km</option>
-        </select>
-        <button class="btn btn-sm btn-light" type="button" data-map-tool="search"><i class="bi bi-search"></i> Search center</button>
-      `;
-      toolbarEl.addEventListener("click", function (event) {
-        const tool = event.target.closest("[data-map-tool]");
-        if (!tool) return;
-        const action = tool.getAttribute("data-map-tool");
-        if (action === "refresh") loadRoute(true);
-        if (action === "fit") fitTrip();
-        if (action === "search") {
-          campgroundVisible = true;
-          if (!map.hasLayer(campgroundLayer)) campgroundLayer.addTo(map);
-          searchCampgroundsAroundCenter();
-        }
-        if (action === "toggle-campgrounds") {
-          campgroundVisible = !campgroundVisible;
-          if (campgroundVisible) {
-            campgroundLayer.addTo(map);
-            tool.innerHTML = '<i class="bi bi-tree"></i> Hide campgrounds';
-            lastSearchMode = "bounds";
-            loadVisibleCampgrounds();
-          } else {
-            campgroundLayer.clearLayers();
-            map.removeLayer(campgroundLayer);
-            tool.innerHTML = '<i class="bi bi-tree"></i> Show campgrounds';
-          }
-        }
-      });
-      const radiusSelect = toolbarEl.querySelector('[data-map-tool="radius"]');
-      radiusSelect && radiusSelect.addEventListener("change", function () {
-        campgroundRadiusKm = Number(radiusSelect.value) || 20;
-      });
-    }
   }
 
   function setStatus(text, kind) {
@@ -485,8 +507,72 @@
     statusEl.dataset.kind = kind || "info";
   }
 
+  function setStatusHtml(html, kind) {
+    if (!statusEl) return;
+    statusEl.innerHTML = html;
+    statusEl.dataset.kind = kind || "info";
+  }
+
   function fitTrip() {
     if (bounds.length) map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
+  }
+
+  function setupToolbar() {
+    if (!toolbarEl) return;
+    const adminTools = data.admin ? `
+      <button class="btn btn-sm btn-light" type="button" data-map-tool="toggle-campgrounds"><i class="bi bi-tree"></i> Hide campgrounds</button>
+      <select class="form-select form-select-sm" data-map-tool="radius" aria-label="Campground search radius">
+        <option value="10">10 km</option>
+        <option value="20" selected>20 km</option>
+        <option value="50">50 km</option>
+      </select>
+      <button class="btn btn-sm btn-light" type="button" data-map-tool="search"><i class="bi bi-search"></i> Search center</button>
+    ` : "";
+    toolbarEl.innerHTML = `
+      <button class="btn btn-sm btn-light" type="button" data-map-tool="refresh"><i class="bi bi-arrow-clockwise"></i> Refresh route</button>
+      <button class="btn btn-sm btn-light" type="button" data-map-tool="fit"><i class="bi bi-bounding-box"></i> Fit trip</button>
+      <button class="btn btn-sm btn-light" type="button" data-map-tool="toggle-tracks"><i class="bi bi-signpost-2"></i> Hide tracks</button>
+      ${adminTools}
+    `;
+    toolbarEl.addEventListener("click", function (event) {
+      const tool = event.target.closest("[data-map-tool]");
+      if (!tool) return;
+      const action = tool.getAttribute("data-map-tool");
+      if (action === "refresh") loadRoute(true);
+      if (action === "fit") fitTrip();
+      if (action === "toggle-tracks") {
+        tracksVisible = !tracksVisible;
+        if (tracksVisible) {
+          trackLayer.addTo(map);
+          tool.innerHTML = '<i class="bi bi-signpost-2"></i> Hide tracks';
+        } else {
+          map.removeLayer(trackLayer);
+          tool.innerHTML = '<i class="bi bi-signpost-2"></i> Show tracks';
+        }
+      }
+      if (action === "search" && searchCampgroundsAroundCenter) {
+        campgroundVisible = true;
+        if (campgroundLayer && !map.hasLayer(campgroundLayer)) campgroundLayer.addTo(map);
+        searchCampgroundsAroundCenter();
+      }
+      if (action === "toggle-campgrounds" && campgroundLayer) {
+        campgroundVisible = !campgroundVisible;
+        if (campgroundVisible) {
+          campgroundLayer.addTo(map);
+          tool.innerHTML = '<i class="bi bi-tree"></i> Hide campgrounds';
+          lastSearchMode = "bounds";
+          if (loadVisibleCampgrounds) loadVisibleCampgrounds();
+        } else {
+          campgroundLayer.clearLayers();
+          map.removeLayer(campgroundLayer);
+          tool.innerHTML = '<i class="bi bi-tree"></i> Show campgrounds';
+        }
+      }
+    });
+    const radiusSelect = toolbarEl.querySelector('[data-map-tool="radius"]');
+    radiusSelect && radiusSelect.addEventListener("change", function () {
+      campgroundRadiusKm = Number(radiusSelect.value) || 20;
+    });
   }
 
   function loadRoute(refresh) {
@@ -515,10 +601,10 @@
           dashArray: "2 10",
           lineCap: "round"
         }).addTo(map);
-        let routeMessage = `Route by ${routeData.provider}${routeData.distance_m ? " - " + formatDistance(routeData.distance_m) : ""}`;
+        const distanceText = routeData.distance_m ? ` - ${escapeHtml(formatDistance(routeData.distance_m))}` : "";
         const credits = formatGraphhopperCredits(routeData.graphhopper_credits, routeData.provider);
-        if (credits) routeMessage += ` - ${credits}`;
-        setStatus(routeMessage, "ok");
+        const creditsText = credits ? ` - ${escapeHtml(credits)}` : "";
+        setStatusHtml(`Route by ${providerLabelHtml(routeData.provider)}${distanceText}${creditsText}`, "ok");
       } else if (routeData.status === "not_enough_stops") {
         const credits = formatGraphhopperCredits(routeData.graphhopper_credits, routeData.provider);
         setStatus(`${routeData.message || "Add at least two campsites to calculate a route."}${credits ? " - " + credits : ""}`, "muted");
@@ -535,5 +621,6 @@
     });
   }
 
+  setupToolbar();
   loadRoute(false);
 })();

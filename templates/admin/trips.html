@@ -7,7 +7,7 @@
 </div>
 <div class="table-responsive panel">
     <table class="table align-middle">
-        <thead><tr><th>Trip</th><th>Dates</th><th>Campsites</th><th>POIs</th><th></th></tr></thead>
+        <thead><tr><th>Trip</th><th>Dates</th><th>Campsites</th><th>POIs</th><th>Tracks</th><th></th></tr></thead>
         <tbody>
             {% for trip in trips %}
             <tr>
@@ -15,12 +15,13 @@
                 <td>{{ trip.start_date|date_span(trip.end_date) }}</td>
                 <td>{{ trip.stop_count }}</td>
                 <td>{{ trip.poi_count }}</td>
+                <td>{{ trip.track_count }}</td>
                 <td class="text-end">
                     <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.manage_trip', trip_id=trip.trip_id) }}">Manage</a>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="5" class="text-muted">No trips yet.</td></tr>
+            <tr><td colspan="6" class="text-muted">No trips yet.</td></tr>
             {% endfor %}
         </tbody>
     </table>
