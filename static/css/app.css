@@ -1061,15 +1061,46 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .trip-workspace {
+  .trip-layout {
     height: auto;
     min-height: 0;
   }
 
   .trip-sidebar {
-    grid-template-rows: auto;
+    display: contents;
+  }
+
+  .trip-sidebar-head {
+    order: 1;
+    background: var(--ct-surface);
+  }
+
+  .trip-map-wrap {
+    order: 2;
+    height: min(58vh, 440px);
+    min-height: 340px;
+    border-top: 1px solid var(--ct-border);
+    border-bottom: 1px solid var(--ct-border);
+  }
+
+  .trip-map {
+    height: 100%;
+    min-height: 340px;
+  }
+
+  .trip-sidebar-campsites {
+    order: 3;
+    background: var(--ct-surface);
+  }
+
+  .trip-sidebar-pois {
+    order: 4;
+    background: var(--ct-surface);
+  }
+
+  .trip-workspace {
+    height: auto;
     min-height: 0;
-    overflow: visible;
   }
 
   .trip-sidebar-list {
@@ -1081,18 +1112,42 @@ body {
     overflow: visible;
   }
 
-  .trip-sidebar {
-    border-right: 0;
-  }
-
   .admin-sidebar {
     position: static;
   }
 
   .map-toolbar {
-    left: 3.75rem;
+    top: 0.65rem;
+    right: 0.65rem;
+    left: 3.55rem;
     align-items: stretch;
     justify-content: flex-start;
+    gap: 0.25rem;
+    padding: 0.3rem;
+  }
+
+  .map-toolbar .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-width: max-content;
+  }
+
+  .route-status {
+    right: 0.65rem;
+    left: 0.65rem;
+    bottom: 0.65rem;
+    max-width: none;
+    font-size: 0.9rem;
+  }
+
+  .admin-map-panel {
+    height: min(58vh, 440px);
+    min-height: 340px;
+  }
+
+  .trip-workspace .admin-map {
+    height: 100%;
+    min-height: 340px;
   }
 
   .page-heading,
