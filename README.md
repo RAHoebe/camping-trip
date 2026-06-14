@@ -49,19 +49,14 @@ OSRM_BASE_URL=https://router.project-osrm.org
 
 Routes are calculated between campsites in arrival-date order. Manual POIs are displayed on the map but do not affect the route.
 
-## Traffic Warnings
-
-The app can fetch normalized traffic warnings and road closures from NDW/DATEX II and overlay events near the current route. Normal routing is unchanged unless closure avoidance is explicitly enabled.
+The app caches each route leg separately. When you refresh a larger trip, unchanged legs are reused and new GraphHopper calls are spaced out to avoid the minutely API limit. You can tune this if needed:
 
 ```text
-TRAFFIC_WARNINGS_ENABLED=true
-TRAFFIC_FIRST_PROVIDER=ndw
-TRAFFIC_LOOKAHEAD_DAYS=30
-TRAFFIC_ROUTE_CORRIDOR_METERS=150
-ROUTE_AVOID_CLOSURES_ENABLED=false
+GRAPHHOPPER_LEG_DELAY_SECONDS=8
+GRAPHHOPPER_429_RETRY_SECONDS=65
+GRAPHHOPPER_429_RETRIES=1
+ROUTE_LEG_CACHE_HOURS=24
 ```
-
-Admins can update and inspect events from `Admin -> Traffic Warnings`. The map can also try `Avoid closures` when `ROUTE_AVOID_CLOSURES_ENABLED=true`; failed avoidance falls back to the original route with a warning.
 
 ## Campground Data
 

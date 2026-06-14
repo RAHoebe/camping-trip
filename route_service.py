@@ -1,11 +1,17 @@
 """Routing provider integration and cache handling."""
+import hashlib
 import json
 import logging
+import threading
+import time
 
 import requests
 
 import config
 from database import get_db, get_home_location, get_setting, get_trip_stops, rows_to_dicts, set_setting, stop_signature
+
+_graphhopper_lock = threading.Lock()
+_last_graphhopper_request_at = 0.0
 
 
 def _geojson_line(coordinates):
@@ -43,7 +49,38 @@ def get_graphhopper_credit_status():
     }
 
 
-def _request_graphhopper(stops, avoid_events=None):
+def _graphhopper_wait_for_slot():
+    global _last_graphhopper_request_at
+    delay = max(0.0, float(getattr(config, "GRAPHHOPPER_LEG_DELAY_SECONDS", 0) or 0))
+    if delay <= 0:
+        return
+    with _graphhopper_lock:
+        now = time.monotonic()
+        wait_seconds = (_last_graphhopper_request_at + delay) - now
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        _last_graphhopper_request_at = time.monotonic()
+
+
+def _retry_after_seconds(response):
+    retry_after = response.headers.get("Retry-After") if response is not None else None
+    try:
+        return max(0.0, float(retry_after))
+    except (TypeError, ValueError):
+        return max(0.0, float(getattr(config, "GRAPHHOPPER_429_RETRY_SECONDS", 65) or 65))
+
+
+def _post_graphhopper(url, payload):
+    _graphhopper_wait_for_slot()
+    return requests.post(
+        url,
+        params={"key": config.GRAPHHOPPER_API_KEY},
+        json=payload,
+        timeout=config.ROUTE_TIMEOUT_SECONDS,
+    )
+
+
+def _request_graphhopper(stops):
     if not config.GRAPHHOPPER_API_KEY:
         raise RuntimeError("GRAPHHOPPER_API_KEY is not configured")
     url = f"{config.GRAPHHOPPER_BASE_URL.rstrip('/')}/route"
@@ -54,25 +91,14 @@ def _request_graphhopper(stops, avoid_events=None):
         "points_encoded": False,
         "instructions": False,
     }
-    if avoid_events:
-        from traffic_service import avoid_areas_for_events
-
-        areas = avoid_areas_for_events(avoid_events)
-        if areas.get("features"):
-            payload["custom_model"] = {
-                "areas": areas,
-                "priority": [
-                    {"if": f"in_{feature['id']}", "multiply_by": 0}
-                    for feature in areas["features"]
-                ],
-            }
-    response = requests.post(
-        url,
-        params={"key": config.GRAPHHOPPER_API_KEY},
-        json=payload,
-        timeout=config.ROUTE_TIMEOUT_SECONDS,
-    )
+    response = _post_graphhopper(url, payload)
     _record_graphhopper_rate_limits(response.headers)
+    retries = max(0, int(getattr(config, "GRAPHHOPPER_429_RETRIES", 0) or 0))
+    while getattr(response, "status_code", None) == 429 and retries > 0:
+        time.sleep(_retry_after_seconds(response))
+        response = _post_graphhopper(url, payload)
+        _record_graphhopper_rate_limits(response.headers)
+        retries -= 1
     if not response.ok:
         raise RuntimeError(f"GraphHopper route failed ({response.status_code}): {_response_message(response)}")
     data = response.json()
@@ -111,12 +137,48 @@ def _response_message(response):
     return message[:500]
 
 
-def _request_provider(points, provider, avoid_events=None):
+def _request_provider(points, provider):
     if provider == "osrm":
         return _request_osrm(points)
-    if avoid_events is None:
-        return _request_graphhopper(points)
-    return _request_graphhopper(points, avoid_events=avoid_events)
+    return _request_graphhopper(points)
+
+
+def _leg_signature(start, end):
+    payload = {
+        "start": {
+            "latitude": round(float(start["latitude"]), 6),
+            "longitude": round(float(start["longitude"]), 6),
+        },
+        "end": {
+            "latitude": round(float(end["latitude"]), 6),
+            "longitude": round(float(end["longitude"]), 6),
+        },
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def _get_leg_route(start, end, provider):
+    signature = _leg_signature(start, end)
+    cache_hours = max(0.0, float(getattr(config, "ROUTE_LEG_CACHE_HOURS", 24) or 0))
+    if cache_hours > 0:
+        with get_db() as conn:
+            cached = conn.execute("""
+                SELECT route_geojson, distance_m, duration_s
+                FROM route_leg_cache
+                WHERE provider = ? AND leg_signature = ?
+                  AND created_at >= datetime('now', ?)
+            """, (provider, signature, f"-{cache_hours} hours")).fetchone()
+        if cached:
+            return json.loads(cached["route_geojson"]), cached["distance_m"], cached["duration_s"]
+
+    leg_route, distance_m, duration_s = _request_provider([start, end], provider)
+    with get_db() as conn:
+        conn.execute("""
+            INSERT OR REPLACE INTO route_leg_cache
+                (provider, leg_signature, route_geojson, distance_m, duration_s)
+            VALUES (?, ?, ?, ?, ?)
+        """, (provider, signature, json.dumps(leg_route), distance_m, duration_s))
+    return leg_route, distance_m, duration_s
 
 
 def _route_signature(home, stops):
@@ -156,7 +218,7 @@ def _route_points(home, stops):
     return points
 
 
-def _build_route_and_leg_metrics(points, provider, avoid_closures=False):
+def _build_route_and_leg_metrics(points, provider):
     legs = []
     cumulative_distance = 0
     cumulative_duration = 0
@@ -164,26 +226,8 @@ def _build_route_and_leg_metrics(points, provider, avoid_closures=False):
     for index in range(1, len(points)):
         start = points[index - 1]
         end = points[index]
-        closure_events = []
-        avoidance_status = None
-        avoidance_error = None
         try:
-            if avoid_closures and provider == "graphhopper" and config.ROUTE_AVOID_CLOSURES_ENABLED:
-                from traffic_service import hard_closures_for_leg
-
-                closure_events = hard_closures_for_leg([start, end])
-                if closure_events:
-                    try:
-                        leg_route, distance_m, duration_s = _request_provider([start, end], provider, avoid_events=closure_events)
-                        avoidance_status = "avoided"
-                    except Exception as exc:
-                        avoidance_status = "failed"
-                        avoidance_error = str(exc)
-                        leg_route, distance_m, duration_s = _request_provider([start, end], provider)
-                else:
-                    leg_route, distance_m, duration_s = _request_provider([start, end], provider)
-            else:
-                leg_route, distance_m, duration_s = _request_provider([start, end], provider)
+            leg_route, distance_m, duration_s = _get_leg_route(start, end, provider)
         except Exception as exc:
             raise RuntimeError(f"Could not calculate route from {start['name']} to {end['name']}: {exc}") from exc
 
@@ -208,20 +252,6 @@ def _build_route_and_leg_metrics(points, provider, avoid_closures=False):
             "cumulative_distance_m": cumulative_distance if distance_m is not None else None,
             "cumulative_duration_s": cumulative_duration if duration_s is not None else None,
         }
-        if closure_events:
-            leg["traffic_warnings"] = [
-                {
-                    "event_id": event["event_id"],
-                    "title": event["title"],
-                    "event_type": event["event_type"],
-                    "severity": event["severity"],
-                    "road_name": event["road_name"],
-                }
-                for event in closure_events
-            ]
-            leg["closure_avoidance"] = avoidance_status
-            if avoidance_error:
-                leg["closure_avoidance_error"] = avoidance_error
         legs.append(leg)
     return _geojson_line(stitched_coordinates), legs, cumulative_distance, cumulative_duration
 
@@ -238,7 +268,24 @@ def _stop_metrics_from_legs(legs):
     return metrics, return_home
 
 
-def get_route_for_trip(trip_id, refresh=False, avoid_closures=False):
+def _empty_route_response(status, message, stop_dicts, home, provider):
+    return {
+        "status": status,
+        "message": message,
+        "stops": stop_dicts,
+        "home": home,
+        "route": None,
+        "legs": [],
+        "stop_metrics": {},
+        "return_home_metric": None,
+        "distance_m": None,
+        "duration_s": None,
+        "provider": provider,
+        "graphhopper_credits": get_graphhopper_credit_status() if provider == "graphhopper" else None,
+    }
+
+
+def get_route_for_trip(trip_id, refresh=False, calculate=True):
     stops = get_trip_stops(trip_id)
     stop_dicts = rows_to_dicts(stops)
     home = get_home_location()
@@ -246,25 +293,13 @@ def get_route_for_trip(trip_id, refresh=False, avoid_closures=False):
     points = _route_points(home, stops)
     if len(points) < 2:
         needed = "Add a campsite to calculate a route from home." if home else "Add at least two campsites to calculate a route."
-        return {
-            "status": "not_enough_stops",
-            "message": needed,
-            "stops": stop_dicts,
-            "home": home,
-            "route": None,
-            "distance_m": None,
-            "duration_s": None,
-            "provider": provider,
-            "graphhopper_credits": get_graphhopper_credit_status() if provider == "graphhopper" else None,
-        }
+        return _empty_route_response("not_enough_stops", needed, stop_dicts, home, provider)
 
     signature_suffix = _route_signature(home, stops)
-    if avoid_closures:
-        signature_suffix += "|avoid_closures"
     signature = stop_signature([{"stop_id": "route", "arrival_date": signature_suffix, "departure_date": "", "latitude": 0, "longitude": 0}])
     graphhopper_credits = get_graphhopper_credit_status() if provider == "graphhopper" else None
 
-    if not refresh and not avoid_closures:
+    if not refresh:
         with get_db() as conn:
             cached = conn.execute("""
                 SELECT * FROM route_cache
@@ -288,8 +323,17 @@ def get_route_for_trip(trip_id, refresh=False, avoid_closures=False):
                     "graphhopper_credits": graphhopper_credits,
                 }
 
+    if not calculate:
+        return _empty_route_response(
+            "manual_refresh_required",
+            "Route not calculated yet. Use Refresh route when you are ready.",
+            stop_dicts,
+            home,
+            provider,
+        )
+
     try:
-        route, legs, distance_m, duration_s = _build_route_and_leg_metrics(points, provider, avoid_closures=avoid_closures)
+        route, legs, distance_m, duration_s = _build_route_and_leg_metrics(points, provider)
         status = "ok"
         error_message = None
     except Exception as exc:
@@ -301,7 +345,7 @@ def get_route_for_trip(trip_id, refresh=False, avoid_closures=False):
         status = "error"
         error_message = str(exc)
 
-    if status == "ok" and not avoid_closures:
+    if status == "ok":
         with get_db() as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO route_cache
@@ -332,6 +376,5 @@ def get_route_for_trip(trip_id, refresh=False, avoid_closures=False):
         "duration_s": duration_s,
         "provider": provider,
         "cached": False,
-        "avoid_closures": avoid_closures,
         "graphhopper_credits": get_graphhopper_credit_status() if provider == "graphhopper" else None,
     }

@@ -31,7 +31,7 @@
                 </a>
             </div>
         </div>
-        <div class="sidebar-section">
+        <div class="sidebar-section trip-sidebar-list trip-sidebar-campsites">
             <h2>Campsites</h2>
             {% for stop in stops %}
             {% set metric = route.stop_metrics.get(stop.stop_id) if route.stop_metrics else none %}
@@ -59,7 +59,7 @@
             <p class="text-muted">No campsites planned yet.</p>
             {% endfor %}
         </div>
-        <div class="sidebar-section">
+        <div class="sidebar-section trip-sidebar-list trip-sidebar-pois">
             <h2>POIs</h2>
             {% for poi in pois %}
             <div class="poi-row">
@@ -88,8 +88,7 @@ window.CAMPING_TRIP = {
     home: {{ home_json|tojson }},
     stops: {{ stops_json|tojson }},
     pois: {{ pois_json|tojson }},
-    stopMetrics: {{ route.stop_metrics|tojson }},
-    trafficWarningsUrl: {{ url_for('api.trip_traffic_warnings', trip_id=trip.trip_id)|tojson }}
+    stopMetrics: {{ route.stop_metrics|tojson }}
 };
 </script>
 <script src="{{ url_for('static', filename='js/trip-map.js') }}"></script>

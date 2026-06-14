@@ -14,8 +14,6 @@
   const bounds = [];
   let routeLine = null;
   let campgroundLayer = null;
-  let warningLayer = L.layerGroup().addTo(map);
-  let warningsVisible = true;
   let campgroundVisible = true;
   let campgroundRadiusKm = 20;
   let lastSearchMode = "bounds";
@@ -23,9 +21,7 @@
   function updateMarkerScale() {
     const zoom = map.getZoom();
     let scale = 1;
-    if (zoom <= 7) scale = 0.25;
-    else if (zoom <= 9) scale = 0.33;
-    else if (zoom <= 11) scale = 0.5;
+    if (zoom <= 10) scale = 0.5;
     mapEl.style.setProperty("--map-icon-scale", scale);
   }
 
@@ -52,6 +48,31 @@
         if (key && value) tags[key] = value;
       });
     return tags;
+  }
+
+  function campgroundText(record) {
+    return [
+      record && record.name,
+      record && record.description,
+      record && record.notes,
+      record && record.address,
+      record && record.raw_data
+    ].filter(Boolean).join(" ").toLowerCase();
+  }
+
+  function campgroundKind(record) {
+    const text = campgroundText(record);
+    const farmWords = ["boerderij", "boerencamping", "farm", "farmcamping", "farm camping", "agricamping", "agriturismo"];
+    const swimWords = ["swimming_pool=yes", "swimming pool", "swimmingpool", "zwembad", "swimming=yes", "swimming lake", "zwemmeer", "recreatieplas", "lake", "lagune", "strandbad"];
+    if (swimWords.some(function (word) { return text.indexOf(word) !== -1; })) return "swim";
+    if (farmWords.some(function (word) { return text.indexOf(word) !== -1; })) return "farm";
+    return "standard";
+  }
+
+  function campgroundKindIcon(kind) {
+    if (kind === "farm") return "house-heart";
+    if (kind === "swim") return "water";
+    return "tree";
   }
 
   function joinPresent(parts, separator) {
@@ -159,10 +180,12 @@
     `;
   }
 
-  function stopIcon(index) {
+  function stopIcon(index, stop) {
+    const kind = campgroundKind(stop || {});
+    const badge = kind === "standard" ? "" : `<i class="bi bi-${campgroundKindIcon(kind)} marker-badge"></i>`;
     return L.divIcon({
-      className: "stop-marker",
-      html: `<span>${index}</span>`,
+      className: `stop-marker stop-${kind}`,
+      html: `<span><strong>${index}</strong>${badge}</span>`,
       iconSize: [32, 32],
       iconAnchor: [16, 16]
     });
@@ -195,90 +218,14 @@
     });
   }
 
-  function campgroundIcon() {
+  function campgroundIcon(campground) {
+    const kind = campgroundKind(campground || {});
     return L.divIcon({
-      className: "campground-marker",
-      html: '<i class="bi bi-tree"></i>',
+      className: `campground-marker campground-${kind}`,
+      html: `<i class="bi bi-${campgroundKindIcon(kind)}"></i>`,
       iconSize: [26, 26],
       iconAnchor: [13, 13]
     });
-  }
-
-  function warningColor(warning) {
-    return warning.severity === "closed" ? "#dc2626" : "#facc15";
-  }
-
-  function warningIsJunctionClosure(warning) {
-    const title = String(warning.title || "").toLowerCase();
-    return warning.event_type === "closure" && title.indexOf("junction_closure") !== -1;
-  }
-
-  function centerOfCoordinates(coordinates) {
-    if (!coordinates || !coordinates.length) return null;
-    let lon = 0;
-    let lat = 0;
-    coordinates.forEach(function (coord) {
-      lon += Number(coord[0]);
-      lat += Number(coord[1]);
-    });
-    return [lat / coordinates.length, lon / coordinates.length];
-  }
-
-  function warningPopupHtml(warning) {
-    return `
-      <div class="traffic-popup">
-        <strong>${escapeHtml(warning.title || "Traffic warning")}</strong>
-        <div>${escapeHtml(warning.event_type || "unknown")} - ${escapeHtml(warning.severity || "info")}</div>
-        ${warning.road_name ? `<div>${escapeHtml(warning.road_name)}</div>` : ""}
-        ${warning.starts_at || warning.ends_at ? `<div class="text-muted small">${escapeHtml(warning.starts_at || "")}${warning.ends_at ? " to " + escapeHtml(warning.ends_at) : ""}</div>` : ""}
-      </div>
-    `;
-  }
-
-  function addWarningGeometry(warning) {
-    if (!warning.geometry) return;
-    const color = warningColor(warning);
-    if (warning.geometry.type === "Point") {
-      const coord = warning.geometry.coordinates;
-      L.circleMarker([coord[1], coord[0]], {
-        radius: warning.severity === "closed" ? 6 : 5,
-        color,
-        fillColor: color,
-        fillOpacity: 0.7,
-        weight: 1.5
-      }).bindPopup(warningPopupHtml(warning)).addTo(warningLayer);
-    }
-    if (warning.geometry.type === "LineString") {
-      const latlngs = warning.geometry.coordinates.map(function (coord) {
-        return [coord[1], coord[0]];
-      });
-      if (warningIsJunctionClosure(warning)) {
-        const center = centerOfCoordinates(warning.geometry.coordinates);
-        if (center) {
-          L.circleMarker(center, {
-            radius: 7,
-            color: "#ffffff",
-            fillColor: color,
-            fillOpacity: 0.95,
-            weight: 2.5
-          }).bindPopup(warningPopupHtml(warning)).addTo(warningLayer);
-        }
-        return;
-      }
-      L.polyline(latlngs, {
-        color: warning.severity === "closed" ? "#ffffff" : "#78350f",
-        weight: warning.severity === "closed" ? 7 : 6,
-        opacity: warning.severity === "closed" ? 0.88 : 0.72,
-        dashArray: warning.severity === "closed" ? "10 6" : "6 6",
-        interactive: false
-      }).addTo(warningLayer);
-      L.polyline(latlngs, {
-        color,
-        weight: warning.severity === "closed" ? 5 : 3.5,
-        opacity: warning.severity === "closed" ? 0.95 : 0.98,
-        dashArray: warning.severity === "closed" ? "10 6" : "6 6"
-      }).bindPopup(warningPopupHtml(warning)).addTo(warningLayer);
-    }
   }
 
   function withMapPoint(url, latlng, name) {
@@ -358,7 +305,7 @@
     const latlng = [Number(stop.latitude), Number(stop.longitude)];
     if (!Number.isFinite(latlng[0]) || !Number.isFinite(latlng[1])) return;
     bounds.push(latlng);
-    L.marker(latlng, { icon: stopIcon(index + 1) })
+    L.marker(latlng, { icon: stopIcon(index + 1, stop) })
       .bindPopup(stopPopupHtml(stop, index + 1), { maxWidth: 320 })
       .addTo(map);
   });
@@ -421,7 +368,7 @@
         const latlng = [Number(campground.latitude), Number(campground.longitude)];
         if (!Number.isFinite(latlng[0]) || !Number.isFinite(latlng[1])) return;
         const addUrl = `${data.admin.addCampgroundBaseUrl}/${campground.campground_id}/add`;
-        L.marker(latlng, { icon: campgroundIcon() })
+        L.marker(latlng, { icon: campgroundIcon(campground) })
           .bindPopup(campgroundPopupHtml(campground, addUrl), { maxWidth: 320 })
           .addTo(campgroundLayer);
       });
@@ -493,8 +440,6 @@
         <button class="btn btn-sm btn-light" type="button" data-map-tool="refresh"><i class="bi bi-arrow-clockwise"></i> Refresh route</button>
         <button class="btn btn-sm btn-light" type="button" data-map-tool="fit"><i class="bi bi-bounding-box"></i> Fit trip</button>
         <button class="btn btn-sm btn-light" type="button" data-map-tool="toggle-campgrounds"><i class="bi bi-tree"></i> Hide campgrounds</button>
-        <button class="btn btn-sm btn-light" type="button" data-map-tool="toggle-warnings"><i class="bi bi-cone-striped"></i> Hide warnings</button>
-        <button class="btn btn-sm btn-light" type="button" data-map-tool="avoid-closures"><i class="bi bi-sign-stop"></i> Avoid closures</button>
         <select class="form-select form-select-sm" data-map-tool="radius" aria-label="Campground search radius">
           <option value="10">10 km</option>
           <option value="20" selected>20 km</option>
@@ -507,7 +452,6 @@
         if (!tool) return;
         const action = tool.getAttribute("data-map-tool");
         if (action === "refresh") loadRoute(true);
-        if (action === "avoid-closures") loadRoute(true, true);
         if (action === "fit") fitTrip();
         if (action === "search") {
           campgroundVisible = true;
@@ -525,16 +469,6 @@
             campgroundLayer.clearLayers();
             map.removeLayer(campgroundLayer);
             tool.innerHTML = '<i class="bi bi-tree"></i> Show campgrounds';
-          }
-        }
-        if (action === "toggle-warnings") {
-          warningsVisible = !warningsVisible;
-          if (warningsVisible) {
-            warningLayer.addTo(map);
-            tool.innerHTML = '<i class="bi bi-cone-striped"></i> Hide warnings';
-          } else {
-            map.removeLayer(warningLayer);
-            tool.innerHTML = '<i class="bi bi-cone-striped"></i> Show warnings';
           }
         }
       });
@@ -555,12 +489,11 @@
     if (bounds.length) map.fitBounds(bounds, { padding: [32, 32], maxZoom: 12 });
   }
 
-  function loadRoute(refresh, avoidClosures) {
+  function loadRoute(refresh) {
     const params = new URLSearchParams();
     if (refresh) params.set("refresh", "1");
-    if (avoidClosures) params.set("avoid_closures", "1");
     const url = `/api/trips/${data.tripId}/route${params.toString() ? "?" + params.toString() : ""}`;
-    setStatus(avoidClosures ? "Recalculating around hard closures..." : (refresh ? "Refreshing route..." : "Loading route..."), "info");
+    setStatus(refresh ? "Refreshing route... large trips may take a minute." : "Loading route...", "info");
     fetch(url)
     .then(function (response) {
       if (!response.ok) throw new Error("Route request failed");
@@ -582,18 +515,16 @@
           dashArray: "2 10",
           lineCap: "round"
         }).addTo(map);
-        const legs = routeData.legs || [];
-        const avoided = legs.filter(function (leg) { return leg.closure_avoidance === "avoided"; }).length;
-        const failed = legs.filter(function (leg) { return leg.closure_avoidance === "failed"; }).length;
         let routeMessage = `Route by ${routeData.provider}${routeData.distance_m ? " - " + formatDistance(routeData.distance_m) : ""}`;
-        if (avoided) routeMessage += ` - ${avoided} closure${avoided === 1 ? "" : "s"} avoided`;
-        if (failed) routeMessage += ` - ${failed} closure avoidance failed`;
         const credits = formatGraphhopperCredits(routeData.graphhopper_credits, routeData.provider);
         if (credits) routeMessage += ` - ${credits}`;
-        setStatus(routeMessage, failed ? "warning" : "ok");
+        setStatus(routeMessage, "ok");
       } else if (routeData.status === "not_enough_stops") {
         const credits = formatGraphhopperCredits(routeData.graphhopper_credits, routeData.provider);
         setStatus(`${routeData.message || "Add at least two campsites to calculate a route."}${credits ? " - " + credits : ""}`, "muted");
+      } else if (routeData.status === "manual_refresh_required") {
+        const credits = formatGraphhopperCredits(routeData.graphhopper_credits, routeData.provider);
+        setStatus(`${routeData.message || "Use Refresh route when you are ready."}${credits ? " - " + credits : ""}`, "muted");
       } else {
         const credits = formatGraphhopperCredits(routeData.graphhopper_credits, routeData.provider);
         setStatus(`${routeData.message ? `Route unavailable: ${routeData.message}` : "Route unavailable."}${credits ? " - " + credits : ""}`, "warning");
@@ -604,22 +535,5 @@
     });
   }
 
-  function loadTrafficWarnings() {
-    const url = data.trafficWarningsUrl || (data.admin && data.admin.trafficWarningsUrl);
-    if (!url) return;
-    fetch(url)
-      .then(function (response) {
-        if (!response.ok) throw new Error("Traffic warning request failed");
-        return response.json();
-      })
-      .then(function (payload) {
-        const warnings = payload.warnings || [];
-        warningLayer.clearLayers();
-        warnings.forEach(addWarningGeometry);
-      })
-      .catch(function () {});
-  }
-
   loadRoute(false);
-  loadTrafficWarnings();
 })();

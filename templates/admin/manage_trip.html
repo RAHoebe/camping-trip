@@ -46,6 +46,8 @@
             Route ready{% if route.distance_m %}: {{ "%.0f"|format(route.distance_m / 1000) }} km{% endif %}
             {% elif route.status == "not_enough_stops" %}
             Add at least two campsites for routing.
+            {% elif route.status == "manual_refresh_required" %}
+            Use Refresh route when you are ready.
             {% else %}
             Route unavailable: {{ route.message }}
             {% endif %}
@@ -97,19 +99,22 @@
     <section class="panel">
         <div class="panel-head">
             <h2>POIs</h2>
-            <a class="btn btn-sm btn-success" href="{{ url_for('admin.create_poi', trip_id=trip.trip_id) }}"><i class="bi bi-plus-lg"></i> Manual POI</a>
         </div>
         {% for poi in pois %}
-        <div class="manage-row">
+        <div class="manage-row poi-manage-row">
             <div>
                 <strong>{{ poi.name }}</strong>
                 <div class="text-muted small">{{ poi.category|title }}{% if poi.stop_name %} near {{ poi.stop_name }}{% endif %}</div>
             </div>
-            <div class="button-row">
-                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.edit_poi', poi_id=poi.poi_id) }}">Edit</a>
+            <div class="icon-actions">
+                <a class="icon-btn" href="{{ url_for('admin.edit_poi', poi_id=poi.poi_id) }}" title="Edit POI" aria-label="Edit POI">
+                    <i class="bi bi-pencil"></i>
+                </a>
                 <form method="POST" action="{{ url_for('admin.delete_poi', poi_id=poi.poi_id) }}" onsubmit="return confirm('Delete this POI?')">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                    <button class="icon-btn danger" type="submit" title="Delete POI" aria-label="Delete POI">
+                        <i class="bi bi-trash"></i>
+                    </button>
                 </form>
             </div>
         </div>
@@ -148,8 +153,6 @@ window.CAMPING_TRIP = {
         addCampgroundBaseUrl: {{ (url_for('admin.manage_trip', trip_id=trip.trip_id).rstrip('/') + '/campgrounds')|tojson }},
         campgroundsSearchUrl: {{ url_for('api.campground_search')|tojson }},
         homeLocationUrl: {{ url_for('api.update_home_location')|tojson }},
-        trafficWarningsUrl: {{ url_for('api.trip_traffic_warnings', trip_id=trip.trip_id)|tojson }},
-        avoidClosuresUrl: {{ url_for('api.trip_route', trip_id=trip.trip_id)|tojson }},
         csrfToken: {{ csrf_token()|tojson }}
     }
 };

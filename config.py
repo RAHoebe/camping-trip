@@ -52,9 +52,12 @@ ROUTE_PROVIDER = os.environ.get("ROUTE_PROVIDER", "graphhopper").lower()
 GRAPHHOPPER_BASE_URL = os.environ.get("GRAPHHOPPER_BASE_URL", "https://graphhopper.com/api/1")
 GRAPHHOPPER_API_KEY_FILE = os.environ.get("GRAPHHOPPER_API_KEY_FILE", os.path.join(BASE_DIR, "graphhopper.key"))
 GRAPHHOPPER_API_KEY = os.environ.get("GRAPHHOPPER_API_KEY", "") or _read_optional_key_file(GRAPHHOPPER_API_KEY_FILE)
+GRAPHHOPPER_LEG_DELAY_SECONDS = float(os.environ.get("GRAPHHOPPER_LEG_DELAY_SECONDS", "8"))
+GRAPHHOPPER_429_RETRY_SECONDS = float(os.environ.get("GRAPHHOPPER_429_RETRY_SECONDS", "65"))
+GRAPHHOPPER_429_RETRIES = int(os.environ.get("GRAPHHOPPER_429_RETRIES", "1"))
+ROUTE_LEG_CACHE_HOURS = float(os.environ.get("ROUTE_LEG_CACHE_HOURS", "24"))
 OSRM_BASE_URL = os.environ.get("OSRM_BASE_URL", "https://router.project-osrm.org")
 ROUTE_TIMEOUT_SECONDS = int(os.environ.get("ROUTE_TIMEOUT_SECONDS", "20"))
-ROUTE_AVOID_CLOSURES_ENABLED = os.environ.get("ROUTE_AVOID_CLOSURES_ENABLED", "false").lower() == "true"
 
 GPXFEED_REPO = os.environ.get("GPXFEED_REPO", "GpxFeed/campgrounds")
 GPXFEED_BRANCH = os.environ.get("GPXFEED_BRANCH", "master")
@@ -62,13 +65,6 @@ GPXFEED_FOLDER = os.environ.get("GPXFEED_FOLDER", "gpx-stripped")
 GPXFEED_AUTO_UPDATE = os.environ.get("GPXFEED_AUTO_UPDATE", "true").lower() == "true"
 GPXFEED_UPDATE_INTERVAL_HOURS = int(os.environ.get("GPXFEED_UPDATE_INTERVAL_HOURS", "24"))
 GPXFEED_REQUEST_TIMEOUT_SECONDS = int(os.environ.get("GPXFEED_REQUEST_TIMEOUT_SECONDS", "30"))
-
-TRAFFIC_WARNINGS_ENABLED = os.environ.get("TRAFFIC_WARNINGS_ENABLED", "true").lower() == "true"
-TRAFFIC_FIRST_PROVIDER = os.environ.get("TRAFFIC_FIRST_PROVIDER", "ndw").lower()
-TRAFFIC_LOOKAHEAD_DAYS = int(os.environ.get("TRAFFIC_LOOKAHEAD_DAYS", "30"))
-TRAFFIC_ROUTE_CORRIDOR_METERS = int(os.environ.get("TRAFFIC_ROUTE_CORRIDOR_METERS", "150"))
-TRAFFIC_NDW_URL = os.environ.get("TRAFFIC_NDW_URL", "https://opendata.ndw.nu/actueel_beeld.xml.gz")
-TRAFFIC_REQUEST_TIMEOUT_SECONDS = int(os.environ.get("TRAFFIC_REQUEST_TIMEOUT_SECONDS", "30"))
 
 DEFAULT_ADMIN_USERNAME = os.environ.get("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "change-me-please")

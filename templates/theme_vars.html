@@ -1,0 +1,17 @@
+{% set theme_values = {
+    'purple': ('#8b5cf6', '#7c3aed', 'rgba(139, 92, 246, 0.12)', '#4c1d95'),
+    'red': ('#ef4444', '#dc2626', 'rgba(239, 68, 68, 0.12)', '#7f1d1d'),
+    'green': ('#2f6f4e', '#23563c', 'rgba(47, 111, 78, 0.12)', '#275943'),
+    'cyan': ('#06b6d4', '#0891b2', 'rgba(6, 182, 212, 0.12)', '#155e75'),
+    'blue': ('#3b82f6', '#2563eb', 'rgba(59, 130, 246, 0.12)', '#1e3a8a'),
+    'yellow': ('#f59e0b', '#d97706', 'rgba(245, 158, 11, 0.12)', '#92400e')
+} %}
+{% set selected_theme = theme_values.get(theme_color, theme_values['green']) %}
+<style>
+  :root {
+    --ct-forest: {{ selected_theme[0] }};
+    --ct-forest-dark: {{ selected_theme[1] }};
+    --ct-forest-soft: {{ selected_theme[2] }};
+    --ct-navbar-end: {{ selected_theme[3] }};
+  }
+</style>

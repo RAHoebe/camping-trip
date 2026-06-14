@@ -7,7 +7,6 @@
         <a class="{% if request.endpoint == 'admin.index' %}active{% endif %}" href="{{ url_for('admin.index') }}"><i class="bi bi-speedometer2"></i> Dashboard</a>
         <a class="{% if request.endpoint in ['admin.trips_list', 'admin.manage_trip', 'admin.create_trip', 'admin.edit_trip'] %}active{% endif %}" href="{{ url_for('admin.trips_list') }}"><i class="bi bi-signpost-split"></i> Trips</a>
         <a class="{% if request.endpoint == 'admin.campgrounds' %}active{% endif %}" href="{{ url_for('admin.campgrounds') }}"><i class="bi bi-tree"></i> Campground Data</a>
-        <a class="{% if request.endpoint == 'admin.traffic' %}active{% endif %}" href="{{ url_for('admin.traffic') }}"><i class="bi bi-cone-striped"></i> Traffic Warnings</a>
         <a class="{% if request.endpoint in ['admin.users_list', 'admin.create_user', 'admin.edit_user'] %}active{% endif %}" href="{{ url_for('admin.users_list') }}"><i class="bi bi-people"></i> Users</a>
         <a class="{% if request.endpoint == 'admin.options' %}active{% endif %}" href="{{ url_for('admin.options') }}"><i class="bi bi-sliders"></i> Options</a>
         <hr>

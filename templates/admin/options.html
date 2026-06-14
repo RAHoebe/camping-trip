@@ -1,50 +1,80 @@
 {% extends "admin/base_admin.html" %}
 {% block title %}Options{% endblock %}
 {% block admin_content %}
-<div class="page-heading"><h1>Options</h1></div>
-<form class="panel form-narrow" method="POST">
+<div class="page-heading"><h1><i class="bi bi-sliders"></i> Site Options</h1></div>
+<form class="panel form-wide" method="POST">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="mb-3"><label class="form-label">Site title</label><input class="form-control" name="site_title" value="{{ site_title }}"></div>
-    <div class="mb-3">
-        <label class="form-label">Default theme</label>
-        <select class="form-select" name="default_theme">
-            <option value="light" {% if default_theme == 'light' %}selected{% endif %}>Light</option>
-            <option value="dark" {% if default_theme == 'dark' %}selected{% endif %}>Dark</option>
+    <section class="options-section">
+        <h2>Appearance</h2>
+        <div class="mb-4">
+            <label for="site_title" class="form-label fw-semibold">Website Title</label>
+            <input class="form-control" id="site_title" name="site_title" value="{{ settings.get('site_title', 'Camping Trip Planner') }}" maxlength="60" required>
+            <div class="form-text">Shown in the navbar, browser tab, login screen, and footer.</div>
+        </div>
+        <div class="mb-4">
+            <label for="default_theme" class="form-label fw-semibold">Default Theme</label>
+            {% set dt = settings.get('default_theme', 'light') %}
+            <select class="form-select" id="default_theme" name="default_theme">
+                <option value="light" {% if dt == 'light' %}selected{% endif %}>Light</option>
+                <option value="dark" {% if dt == 'dark' %}selected{% endif %}>Dark</option>
+            </select>
+            <div class="form-text">Theme shown to visitors who have not set a browser preference in this app.</div>
+        </div>
+        <div class="mb-4">
+            <label class="form-label fw-semibold">Theme Color</label>
+            {% set tc = settings.get('theme_color', 'green') %}
+            <div class="theme-color-grid">
+                {% set colors = [
+                    ('purple', 'Purple', '#8b5cf6'),
+                    ('red', 'Red', '#ef4444'),
+                    ('green', 'Green', '#10b981'),
+                    ('cyan', 'Cyan', '#06b6d4'),
+                    ('blue', 'Blue', '#3b82f6'),
+                    ('yellow', 'Yellow', '#f59e0b')
+                ] %}
+                {% for value, label, swatch in colors %}
+                <label class="theme-color-choice" for="color_{{ value }}">
+                    <input class="form-check-input" type="radio" name="theme_color" id="color_{{ value }}" value="{{ value }}" {% if tc == value %}checked{% endif %}>
+                    <span class="theme-swatch" style="--swatch-color: {{ swatch }}"></span>
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="form-text">Primary accent color used for the navbar, buttons, markers, and highlights.</div>
+        </div>
+    </section>
+
+    <section class="options-section">
+        <h2>Maintenance</h2>
+        <div class="mb-4">
+            <label for="version_check_enabled" class="form-label fw-semibold">Docker Update Check</label>
+            <select class="form-select" id="version_check_enabled" name="version_check_enabled">
+                {% set version_check_enabled = settings.get('version_check_enabled', 'true') %}
+                <option value="true" {% if version_check_enabled == 'true' %}selected{% endif %}>Enabled</option>
+                <option value="false" {% if version_check_enabled == 'false' %}selected{% endif %}>Disabled</option>
         </select>
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Accent color</label>
-        <select class="form-select" name="theme_color">
-            <option value="green" {% if theme_color == 'green' %}selected{% endif %}>Green</option>
-            <option value="blue" {% if theme_color == 'blue' %}selected{% endif %}>Blue</option>
-        </select>
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Docker update check</label>
-        <select class="form-select" name="version_check_enabled">
-            {% set version_check_enabled = settings.get('version_check_enabled', 'true') %}
-            <option value="true" {% if version_check_enabled == 'true' %}selected{% endif %}>Enabled</option>
-            <option value="false" {% if version_check_enabled == 'false' %}selected{% endif %}>Disabled</option>
-        </select>
-        <div class="form-text">When enabled, admins see a footer badge if a newer Docker Hub version is available.</div>
-    </div>
-    <hr>
-    <h2 class="h5">Home Location</h2>
-    <p class="text-muted">When set, routes start at home and then continue to campsites ordered by arrival date.</p>
+            <div class="form-text">When enabled, admins see a footer badge if a newer Docker Hub version is available.</div>
+        </div>
+    </section>
+
+    <section class="options-section">
+    <h2>Home Location</h2>
+    <p class="text-muted mb-3">When set, routes start at home and then continue to campsites ordered by arrival date.</p>
     <div class="row g-3">
         <div class="col-md-6">
-            <label class="form-label">Home name</label>
+            <label class="form-label fw-semibold">Home Name</label>
             <input class="form-control" name="home_name" value="{{ settings.get('home_name', 'Home') }}">
         </div>
         <div class="col-md-3">
-            <label class="form-label">Latitude</label>
+            <label class="form-label fw-semibold">Latitude</label>
             <input class="form-control" name="home_latitude" value="{{ settings.get('home_latitude', '') }}" placeholder="52.123456">
         </div>
         <div class="col-md-3">
-            <label class="form-label">Longitude</label>
+            <label class="form-label fw-semibold">Longitude</label>
             <input class="form-control" name="home_longitude" value="{{ settings.get('home_longitude', '') }}" placeholder="5.123456">
         </div>
     </div>
-    <button class="btn btn-success" type="submit">Save Options</button>
+    </section>
+    <button class="btn btn-success" type="submit"><i class="bi bi-check-lg"></i> Save Options</button>
 </form>
 {% endblock %}

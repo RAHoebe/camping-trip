@@ -8,7 +8,6 @@ from blueprints.auth import admin_required
 from database import get_db, get_all_settings, get_home_location, get_trip, get_trip_pois, get_trip_stops, log_audit, rows_to_dicts, set_setting
 from gpx_import import get_gpxfeed_status, update_gpxfeed_if_needed
 from route_service import get_route_for_trip
-from traffic_service import get_traffic_status, record_traffic_error, update_traffic_events
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -380,7 +379,7 @@ def manage_trip(trip_id):
         abort(404)
     stops = get_trip_stops(trip_id)
     pois = get_trip_pois(trip_id)
-    route = get_route_for_trip(trip_id)
+    route = get_route_for_trip(trip_id, calculate=False)
     home = get_home_location()
     return render_template(
         "admin/manage_trip.html",
@@ -673,26 +672,6 @@ def campgrounds():
     )
 
 
-@admin_bp.route("/traffic", methods=["GET", "POST"])
-@admin_required
-def traffic():
-    if request.method == "POST":
-        try:
-            result = update_traffic_events(force=True)
-            flash(f"Traffic update finished. {result.get('event_count', 0)} events are available.", "success")
-        except Exception as exc:
-            record_traffic_error("ndw", exc)
-            flash(f"Could not update traffic data: {exc}", "danger")
-        return redirect(url_for("admin.traffic"))
-    with get_db() as conn:
-        events = conn.execute("""
-            SELECT * FROM traffic_events
-            ORDER BY fetched_at DESC, starts_at DESC
-            LIMIT 200
-        """).fetchall()
-    return render_template("admin/traffic.html", status=get_traffic_status(), events=events)
-
-
 @admin_bp.route("/campgrounds/<int:campground_id>/add", methods=["POST"])
 @admin_required
 def choose_campground_trip(campground_id):
@@ -755,9 +734,16 @@ def add_campground_to_trip(trip_id, campground_id):
 @admin_required
 def options():
     if request.method == "POST":
-        set_setting("site_title", request.form.get("site_title", "Camping Trip Planner").strip())
-        set_setting("default_theme", request.form.get("default_theme", "light"))
-        set_setting("theme_color", request.form.get("theme_color", "green"))
+        site_title = request.form.get("site_title", "Camping Trip Planner").strip() or "Camping Trip Planner"
+        default_theme = request.form.get("default_theme", "light")
+        if default_theme not in ("light", "dark"):
+            default_theme = "light"
+        theme_color = request.form.get("theme_color", "green")
+        if theme_color not in ("purple", "red", "green", "cyan", "blue", "yellow"):
+            theme_color = "green"
+        set_setting("site_title", site_title)
+        set_setting("default_theme", default_theme)
+        set_setting("theme_color", theme_color)
         version_check_enabled = request.form.get("version_check_enabled", "false")
         if version_check_enabled not in ("true", "false"):
             version_check_enabled = "true"

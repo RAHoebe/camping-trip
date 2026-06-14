@@ -23,7 +23,7 @@ def trip_detail(trip_id):
         abort(404)
     stops = get_trip_stops(trip_id)
     pois = get_trip_pois(trip_id)
-    route = get_route_for_trip(trip_id)
+    route = get_route_for_trip(trip_id, calculate=False)
     return render_template(
         "trip_detail.html",
         trip=trip,

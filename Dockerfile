@@ -19,4 +19,4 @@ EXPOSE 8034
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8034/')" || exit 1
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:8034 --workers 1 --threads 8 --timeout 120 --access-logfile /dev/null --error-logfile - --log-level ${GUNICORN_LOG_LEVEL} app:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:8034 --workers 1 --threads 8 --timeout 300 --access-logfile /dev/null --error-logfile - --log-level ${GUNICORN_LOG_LEVEL} app:app"]

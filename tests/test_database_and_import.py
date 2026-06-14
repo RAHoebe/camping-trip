@@ -8,7 +8,6 @@ from export_service import google_maps_url, trip_kml
 from gpx_import import import_gpx_file
 from blueprints.api import _distance_km
 from route_service import _request_graphhopper, get_route_for_trip
-from traffic_service import parse_datex_events, warnings_for_route
 
 
 def configure_temp_db(monkeypatch, tmp_path):
@@ -103,12 +102,35 @@ def test_home_plus_one_stop_is_routeable(monkeypatch, tmp_path):
     assert route["stop_metrics"][1]["cumulative_distance_m"] == 1000
 
 
+def test_cache_only_route_does_not_call_provider(monkeypatch, tmp_path):
+    configure_temp_db(monkeypatch, tmp_path)
+
+    def fail_graphhopper(points):
+        raise AssertionError("GraphHopper should not be called without refresh")
+
+    monkeypatch.setattr("route_service._request_graphhopper", fail_graphhopper)
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_latitude', '52.0')")
+        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_longitude', '5.0')")
+        cur = conn.execute("INSERT INTO trips (title) VALUES ('Manual Route')").lastrowid
+        conn.execute("""
+            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
+            VALUES (?, 'Camp', '2026-07-01', 52.5, 5.5)
+        """, (cur,))
+
+    route = get_route_for_trip(cur, calculate=False)
+    assert route["status"] == "manual_refresh_required"
+    assert route["route"] is None
+
+
 def test_graphhopper_rate_limit_headers_are_stored(monkeypatch, tmp_path):
     configure_temp_db(monkeypatch, tmp_path)
     monkeypatch.setattr(config, "GRAPHHOPPER_API_KEY", "test-key")
     monkeypatch.setattr(config, "GRAPHHOPPER_BASE_URL", "https://graphhopper.example")
+    monkeypatch.setattr(config, "GRAPHHOPPER_LEG_DELAY_SECONDS", 0)
 
     class FakeResponse:
+        status_code = 200
         ok = True
         headers = {
             "X-RateLimit-Remaining": "12345",
@@ -133,6 +155,94 @@ def test_graphhopper_rate_limit_headers_are_stored(monkeypatch, tmp_path):
 
     assert get_setting("graphhopper_credits_remaining") == "12345"
     assert get_setting("graphhopper_credits_limit") == "100000"
+
+
+def test_graphhopper_429_is_retried_once(monkeypatch, tmp_path):
+    configure_temp_db(monkeypatch, tmp_path)
+    monkeypatch.setattr(config, "GRAPHHOPPER_API_KEY", "test-key")
+    monkeypatch.setattr(config, "GRAPHHOPPER_BASE_URL", "https://graphhopper.example")
+    monkeypatch.setattr(config, "GRAPHHOPPER_LEG_DELAY_SECONDS", 0)
+    monkeypatch.setattr(config, "GRAPHHOPPER_429_RETRY_SECONDS", 0)
+    monkeypatch.setattr(config, "GRAPHHOPPER_429_RETRIES", 1)
+    calls = []
+
+    class FakeResponse:
+        headers = {}
+        reason = ""
+        text = ""
+
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.ok = status_code == 200
+
+        def json(self):
+            if self.status_code == 429:
+                return {"message": "Minutely API limit heavily violated"}
+            return {
+                "paths": [{
+                    "points": {"coordinates": [[5.0, 52.0], [5.5, 52.5]]},
+                    "distance": 1000,
+                    "time": 600000,
+                }]
+            }
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        return FakeResponse(429 if len(calls) == 1 else 200)
+
+    monkeypatch.setattr("route_service.requests.post", fake_post)
+    route, distance, duration = _request_graphhopper([
+        {"latitude": 52.0, "longitude": 5.0},
+        {"latitude": 52.5, "longitude": 5.5},
+    ])
+
+    assert len(calls) == 2
+    assert route["coordinates"] == [[5.0, 52.0], [5.5, 52.5]]
+    assert distance == 1000
+    assert duration == 600
+
+
+def test_route_refresh_reuses_cached_legs(monkeypatch, tmp_path):
+    configure_temp_db(monkeypatch, tmp_path)
+    calls = []
+
+    def fake_graphhopper(points):
+        calls.append([point["name"] for point in points])
+        start = points[0]
+        end = points[1]
+        return {
+            "type": "LineString",
+            "coordinates": [
+                [float(start["longitude"]), float(start["latitude"])],
+                [float(end["longitude"]), float(end["latitude"])],
+            ],
+        }, 1000, 600
+
+    monkeypatch.setattr("route_service._request_graphhopper", fake_graphhopper)
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_latitude', '52.0')")
+        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_longitude', '5.0')")
+        trip_id = conn.execute("INSERT INTO trips (title) VALUES ('Cached Legs')").lastrowid
+        conn.execute("""
+            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
+            VALUES (?, 'First Camp', '2026-07-01', 52.5, 5.5)
+        """, (trip_id,))
+        conn.execute("""
+            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
+            VALUES (?, 'Second Camp', '2026-07-02', 53.0, 6.0)
+        """, (trip_id,))
+
+    first = get_route_for_trip(trip_id, refresh=True)
+    assert first["status"] == "ok"
+    assert len(calls) == 2
+
+    with get_db() as conn:
+        conn.execute("DELETE FROM route_cache WHERE trip_id = ?", (trip_id,))
+
+    second = get_route_for_trip(trip_id, refresh=True)
+    assert second["status"] == "ok"
+    assert len(calls) == 2
+    assert second["distance_m"] == 2000
 
 
 def test_last_stop_adds_return_home_leg(monkeypatch, tmp_path):
@@ -195,6 +305,68 @@ def test_admin_stop_form_defaults_to_previous_departure_and_calculates_nights(mo
     assert response.status_code == 302
     stops = get_trip_stops(trip_id)
     assert stops[-1]["departure_date"] == "2026-06-19"
+
+
+def test_admin_options_save_title_theme_and_color(monkeypatch, tmp_path):
+    configure_temp_db(monkeypatch, tmp_path)
+    monkeypatch.setenv("GPXFEED_AUTO_UPDATE", "false")
+    monkeypatch.setattr(config, "GPXFEED_AUTO_UPDATE", False)
+    from app import app
+
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+    client = app.test_client()
+    client.post("/auth/login", data={"username": "admin", "password": "change-me-please"})
+
+    response = client.post("/admin/options", data={
+        "site_title": "Road Trip Planner",
+        "default_theme": "dark",
+        "theme_color": "purple",
+        "version_check_enabled": "false",
+        "home_name": "Home",
+        "home_latitude": "",
+        "home_longitude": "",
+    })
+
+    assert response.status_code == 302
+    assert get_setting("site_title") == "Road Trip Planner"
+    assert get_setting("default_theme") == "dark"
+    assert get_setting("theme_color") == "purple"
+
+
+def test_route_api_requires_manual_refresh_to_calculate(monkeypatch, tmp_path):
+    configure_temp_db(monkeypatch, tmp_path)
+    monkeypatch.setenv("GPXFEED_AUTO_UPDATE", "false")
+    monkeypatch.setattr(config, "GPXFEED_AUTO_UPDATE", False)
+    calls = []
+
+    def fake_graphhopper(points):
+        calls.append(points)
+        return {"type": "LineString", "coordinates": [[5.0, 52.0], [5.5, 52.5]]}, 1000, 600
+
+    monkeypatch.setattr("route_service._request_graphhopper", fake_graphhopper)
+    from app import app
+
+    app.config["TESTING"] = True
+    app.config["WTF_CSRF_ENABLED"] = False
+    client = app.test_client()
+    client.post("/auth/login", data={"username": "admin", "password": "change-me-please"})
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_latitude', '52.0')")
+        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_longitude', '5.0')")
+        trip_id = conn.execute("INSERT INTO trips (title) VALUES ('API Route')").lastrowid
+        conn.execute("""
+            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
+            VALUES (?, 'Camp', '2026-07-01', 52.5, 5.5)
+        """, (trip_id,))
+
+    response = client.get(f"/api/trips/{trip_id}/route")
+    assert response.get_json()["status"] == "manual_refresh_required"
+    assert calls == []
+
+    response = client.get(f"/api/trips/{trip_id}/route?refresh=1")
+    assert response.get_json()["status"] == "ok"
+    assert len(calls) == 1
 
 
 def test_marking_last_stop_clears_other_last_stop(monkeypatch, tmp_path):
@@ -350,222 +522,3 @@ def test_normal_user_can_access_trip_exports(monkeypatch, tmp_path):
     assert "google.com/maps" in maps_response.headers["Location"]
     assert kml_response.status_code == 200
     assert b"Viewer Trip" in kml_response.data
-
-
-def test_datex_fixture_parses_to_normalized_traffic_event():
-    payload = b"""<?xml version="1.0" encoding="UTF-8"?>
-    <d2LogicalModel>
-      <payloadPublication>
-        <situation>
-          <situationRecord id="closure-1">
-            <situationRecordCreationReference>A2 closure</situationRecordCreationReference>
-            <overallStartTime>2026-07-01T08:00:00+00:00</overallStartTime>
-            <overallEndTime>2026-07-01T18:00:00+00:00</overallEndTime>
-            <roadName>A2</roadName>
-            <comment>Road closed for works</comment>
-            <groupOfLocations>
-              <locationForDisplay>
-                <latitude>51.5000</latitude>
-                <longitude>5.5000</longitude>
-              </locationForDisplay>
-            </groupOfLocations>
-          </situationRecord>
-        </situation>
-      </payloadPublication>
-    </d2LogicalModel>"""
-
-    events = parse_datex_events(payload)
-    assert len(events) == 1
-    assert events[0]["event_type"] == "closure"
-    assert events[0]["severity"] == "closed"
-    assert events[0]["road_name"] == "A2"
-    assert "5.5" in events[0]["geometry_geojson"]
-
-
-def test_datex_lane_restrictions_are_not_full_closures():
-    payload = b"""<?xml version="1.0" encoding="UTF-8"?>
-    <d2LogicalModel>
-      <payloadPublication>
-        <situation>
-          <situationRecord id="lanes-1">
-            <situationRecordCreationReference>RWS01_M1_CLOSED_LANES_D2</situationRecordCreationReference>
-            <comment>Closed lanes on A12</comment>
-            <groupOfLocations>
-              <locationForDisplay>
-                <latitude>52.0000</latitude>
-                <longitude>5.0000</longitude>
-              </locationForDisplay>
-            </groupOfLocations>
-          </situationRecord>
-        </situation>
-      </payloadPublication>
-    </d2LogicalModel>"""
-
-    events = parse_datex_events(payload)
-    assert events[0]["event_type"] == "traffic_measure"
-    assert events[0]["severity"] == "major"
-
-    narrow_payload = payload.replace(b"RWS01_M1_CLOSED_LANES_D2", b"RWS01_M1_NARROW_LANES_D2").replace(b"Closed lanes", b"Narrow lanes")
-    narrow_events = parse_datex_events(narrow_payload)
-    assert narrow_events[0]["event_type"] == "traffic_measure"
-    assert narrow_events[0]["severity"] == "major"
-
-
-def test_datex_junction_closure_is_full_closure():
-    payload = b"""<?xml version="1.0" encoding="UTF-8"?>
-    <d2LogicalModel>
-      <payloadPublication>
-        <situation>
-          <situationRecord id="junction-1">
-            <situationRecordCreationReference>RWS01_M1_JUNCTION_CLOSURE_1_D2</situationRecordCreationReference>
-            <comment>Junction closure</comment>
-            <groupOfLocations>
-              <locationForDisplay>
-                <latitude>52.0000</latitude>
-                <longitude>5.0000</longitude>
-              </locationForDisplay>
-            </groupOfLocations>
-          </situationRecord>
-        </situation>
-      </payloadPublication>
-    </d2LogicalModel>"""
-
-    events = parse_datex_events(payload)
-    assert events[0]["event_type"] == "closure"
-    assert events[0]["severity"] == "closed"
-
-
-def test_traffic_warnings_match_route_corridor_and_ignore_far_events(monkeypatch, tmp_path):
-    configure_temp_db(monkeypatch, tmp_path)
-    monkeypatch.setattr(config, "TRAFFIC_WARNINGS_ENABLED", True)
-    monkeypatch.setattr(config, "TRAFFIC_ROUTE_CORRIDOR_METERS", 1000)
-    route = {"route": {"type": "LineString", "coordinates": [[5.0, 52.0], [6.0, 52.0]]}}
-    with get_db() as conn:
-        cur = conn.execute("INSERT INTO trips (title) VALUES ('Traffic')").lastrowid
-        conn.execute("""
-            INSERT INTO traffic_events (source, country, event_type, severity, title, starts_at, ends_at, geometry_geojson, raw_source_id)
-            VALUES ('test', 'NL', 'closure', 'closed', 'Near closure', '2026-01-01T00:00:00+00:00', '2099-01-01T00:00:00+00:00',
-                    '{"type":"Point","coordinates":[5.5,52.001]}', 'near')
-        """)
-        conn.execute("""
-            INSERT INTO traffic_events (source, country, event_type, severity, title, starts_at, ends_at, geometry_geojson, raw_source_id)
-            VALUES ('test', 'NL', 'closure', 'closed', 'Far closure', '2026-01-01T00:00:00+00:00', '2099-01-01T00:00:00+00:00',
-                    '{"type":"Point","coordinates":[5.5,53.0]}', 'far')
-        """)
-        conn.execute("""
-            INSERT INTO traffic_events (source, country, event_type, severity, title, starts_at, ends_at, geometry_geojson, raw_source_id)
-            VALUES ('test', 'NL', 'unknown', 'info', 'Near informational detour', '2026-01-01T00:00:00+00:00', '2099-01-01T00:00:00+00:00',
-                    '{"type":"LineString","coordinates":[[5.4,52.001],[5.6,52.001]]}', 'info-near')
-        """)
-
-    warnings = warnings_for_route(cur, route=route)
-    assert [warning["title"] for warning in warnings] == ["Near closure"]
-
-
-def test_traffic_warnings_hide_speed_management_duplicates(monkeypatch, tmp_path):
-    configure_temp_db(monkeypatch, tmp_path)
-    monkeypatch.setattr(config, "TRAFFIC_WARNINGS_ENABLED", True)
-    monkeypatch.setattr(config, "TRAFFIC_ROUTE_CORRIDOR_METERS", 1000)
-    route = {"route": {"type": "LineString", "coordinates": [[5.0, 52.0], [6.0, 52.0]]}}
-    geometry = '{"type":"LineString","coordinates":[[5.4,52.001],[5.6,52.001]]}'
-    with get_db() as conn:
-        cur = conn.execute("INSERT INTO trips (title) VALUES ('Traffic')").lastrowid
-        conn.execute("""
-            INSERT INTO traffic_events (source, country, event_type, severity, title, starts_at, ends_at, geometry_geojson, raw_source_id)
-            VALUES ('test', 'NL', 'traffic_measure', 'major', 'RWS01_M1_SPEED_MANAGEMENT_D2',
-                    '2026-01-01T00:00:00+00:00', '2099-01-01T00:00:00+00:00', ?, 'speed')
-        """, (geometry,))
-        conn.execute("""
-            INSERT INTO traffic_events (source, country, event_type, severity, title, starts_at, ends_at, geometry_geojson, raw_source_id)
-            VALUES ('test', 'NL', 'traffic_measure', 'major', 'RWS01_M1_CLOSED_LANES_D2',
-                    '2026-01-01T00:00:00+00:00', '2099-01-01T00:00:00+00:00', ?, 'lanes')
-        """, (geometry,))
-
-    warnings = warnings_for_route(cur, route=route)
-    assert [warning["title"] for warning in warnings] == ["RWS01_M1_CLOSED_LANES_D2"]
-
-
-def test_traffic_warnings_do_not_change_normal_route(monkeypatch, tmp_path):
-    configure_temp_db(monkeypatch, tmp_path)
-    calls = []
-
-    def fake_graphhopper(points, avoid_events=None):
-        calls.append(avoid_events)
-        return {"type": "LineString", "coordinates": [[5.0, 52.0], [6.0, 52.0]]}, 1000, 600
-
-    monkeypatch.setattr("route_service._request_graphhopper", fake_graphhopper)
-    monkeypatch.setattr(config, "ROUTE_AVOID_CLOSURES_ENABLED", True)
-    with get_db() as conn:
-        cur = conn.execute("INSERT INTO trips (title) VALUES ('Normal')").lastrowid
-        conn.execute("""
-            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
-            VALUES (?, 'Camp', '2026-07-01', 52.0, 6.0)
-        """, (cur,))
-        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_latitude', '52.0')")
-        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_longitude', '5.0')")
-
-    route = get_route_for_trip(cur, refresh=True)
-    assert route["status"] == "ok"
-    assert calls == [None]
-
-
-def test_hard_closure_avoidance_attempts_only_intersecting_closure(monkeypatch, tmp_path):
-    configure_temp_db(monkeypatch, tmp_path)
-    avoid_calls = []
-
-    def fake_graphhopper(points, avoid_events=None):
-        avoid_calls.append(avoid_events)
-        return {"type": "LineString", "coordinates": [[float(points[0]["longitude"]), float(points[0]["latitude"])], [float(points[1]["longitude"]), float(points[1]["latitude"])]]}, 1000, 600
-
-    monkeypatch.setattr("route_service._request_graphhopper", fake_graphhopper)
-    monkeypatch.setattr(config, "ROUTE_AVOID_CLOSURES_ENABLED", True)
-    monkeypatch.setattr(config, "TRAFFIC_ROUTE_CORRIDOR_METERS", 1000)
-    with get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_latitude', '52.0')")
-        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_longitude', '5.0')")
-        trip_id = conn.execute("INSERT INTO trips (title) VALUES ('Avoid')").lastrowid
-        conn.execute("""
-            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
-            VALUES (?, 'Camp', '2026-07-01', 52.0, 6.0)
-        """, (trip_id,))
-        conn.execute("""
-            INSERT INTO traffic_events (source, country, event_type, severity, title, starts_at, ends_at, geometry_geojson, raw_source_id)
-            VALUES ('test', 'NL', 'closure', 'closed', 'Near closure', '2026-01-01T00:00:00+00:00', '2099-01-01T00:00:00+00:00',
-                    '{"type":"Point","coordinates":[5.5,52.001]}', 'near')
-        """)
-
-    route = get_route_for_trip(trip_id, refresh=True, avoid_closures=True)
-    assert route["status"] == "ok"
-    assert avoid_calls[0] and avoid_calls[0][0]["title"] == "Near closure"
-    assert route["legs"][0]["closure_avoidance"] == "avoided"
-
-
-def test_failed_hard_closure_avoidance_falls_back_to_original_route(monkeypatch, tmp_path):
-    configure_temp_db(monkeypatch, tmp_path)
-
-    def fake_graphhopper(points, avoid_events=None):
-        if avoid_events:
-            raise RuntimeError("avoid not supported")
-        return {"type": "LineString", "coordinates": [[5.0, 52.0], [6.0, 52.0]]}, 1000, 600
-
-    monkeypatch.setattr("route_service._request_graphhopper", fake_graphhopper)
-    monkeypatch.setattr(config, "ROUTE_AVOID_CLOSURES_ENABLED", True)
-    monkeypatch.setattr(config, "TRAFFIC_ROUTE_CORRIDOR_METERS", 1000)
-    with get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_latitude', '52.0')")
-        conn.execute("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('home_longitude', '5.0')")
-        trip_id = conn.execute("INSERT INTO trips (title) VALUES ('Fallback')").lastrowid
-        conn.execute("""
-            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
-            VALUES (?, 'Camp', '2026-07-01', 52.0, 6.0)
-        """, (trip_id,))
-        conn.execute("""
-            INSERT INTO traffic_events (source, country, event_type, severity, title, starts_at, ends_at, geometry_geojson, raw_source_id)
-            VALUES ('test', 'NL', 'closure', 'closed', 'Near closure', '2026-01-01T00:00:00+00:00', '2099-01-01T00:00:00+00:00',
-                    '{"type":"Point","coordinates":[5.5,52.001]}', 'near')
-        """)
-
-    route = get_route_for_trip(trip_id, refresh=True, avoid_closures=True)
-    assert route["status"] == "ok"
-    assert route["legs"][0]["closure_avoidance"] == "failed"
-    assert "avoid not supported" in route["legs"][0]["closure_avoidance_error"]
