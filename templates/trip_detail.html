@@ -45,8 +45,13 @@
             {% set metric = route.stop_metrics.get(stop.stop_id) if route.stop_metrics else none %}
             <div class="timeline-item">
                 <span class="timeline-number">{{ loop.index }}</span>
-                <div>
-                    <strong>{{ stop.name }}</strong>
+                <div class="point-list-body">
+                    <div class="point-list-head">
+                        <strong>{{ stop.name }}</strong>
+                        <a class="point-map-link" href="https://www.google.com/maps/search/?api=1&query={{ stop.latitude }},{{ stop.longitude }}" target="_blank" rel="noopener" title="Open campsite in Google Maps" aria-label="Open {{ stop.name }} in Google Maps">
+                            <i class="bi bi-map"></i>
+                        </a>
+                    </div>
                     <div class="text-muted small">{{ stop.arrival_date|date_span(stop.departure_date) }}</div>
                     {% if metric %}
                     <div class="stop-route-metrics">
@@ -77,8 +82,13 @@
                 <span class="poi-list-icon poi-{{ poi.category }}">
                     <i class="bi bi-{{ {'viewpoint':'binoculars','restaurant':'cup-hot','hike':'person-walking','fuel':'fuel-pump','supermarket':'basket','parking':'p-square','custom':'pin-map'}.get(poi.category, 'pin-map') }}"></i>
                 </span>
-                <div>
-                    <strong>{{ poi.name }}</strong>
+                <div class="point-list-body">
+                    <div class="point-list-head">
+                        <strong>{{ poi.name }}</strong>
+                        <a class="point-map-link" href="https://www.google.com/maps/search/?api=1&query={{ poi.latitude }},{{ poi.longitude }}" target="_blank" rel="noopener" title="Open POI in Google Maps" aria-label="Open {{ poi.name }} in Google Maps">
+                            <i class="bi bi-map"></i>
+                        </a>
+                    </div>
                     <div class="text-muted small">{{ poi.category|title }}{% if poi.stop_name %} near {{ poi.stop_name }}{% endif %}</div>
                 </div>
             </div>

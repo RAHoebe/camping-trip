@@ -622,6 +622,41 @@ body {
   font-weight: 700;
 }
 
+.point-list-body {
+  min-width: 0;
+  width: 100%;
+}
+
+.point-list-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.5rem;
+}
+
+.point-list-head strong {
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.point-map-link {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--ct-border);
+  border-radius: 6px;
+  color: var(--ct-text-soft);
+  text-decoration: none;
+}
+
+.point-map-link:hover,
+.point-map-link:focus {
+  border-color: var(--ct-forest);
+  color: var(--ct-forest);
+  background: rgba(47, 111, 78, 0.08);
+}
+
 .poi-dot {
   flex: 0 0 14px;
   width: 14px;

@@ -419,6 +419,14 @@ def test_admin_can_upload_edit_and_download_trip_track(monkeypatch, tmp_path):
 
     with get_db() as conn:
         trip_id = conn.execute("INSERT INTO trips (title) VALUES ('Track Trip')").lastrowid
+        conn.execute("""
+            INSERT INTO trip_stops (trip_id, name, arrival_date, latitude, longitude)
+            VALUES (?, 'Camp', '2026-07-01', 52.5, 5.5)
+        """, (trip_id,))
+        conn.execute("""
+            INSERT INTO pois (trip_id, name, category, latitude, longitude)
+            VALUES (?, 'View', 'viewpoint', 53.0, 6.0)
+        """, (trip_id,))
 
     response = client.post(
         f"/admin/trips/{trip_id}/tracks/create",
@@ -458,6 +466,9 @@ def test_admin_can_upload_edit_and_download_trip_track(monkeypatch, tmp_path):
     assert b'id="mapToolbar"' in public_page.data
     assert b"trip-head-actions" in public_page.data
     assert b"track-meta-row" in public_page.data
+    assert b"google.com/maps/search/" in public_page.data
+    assert b"query=52.5,5.5" in public_page.data
+    assert b"query=53.0,6.0" in public_page.data
     assert b"Komoot import help" not in public_page.data
     assert b"Komoot import help" not in admin_page.data
 
